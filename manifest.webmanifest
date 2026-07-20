@@ -1,0 +1,14 @@
+{
+  "name": "FG Inventory Bot",
+  "short_name": "FG Bot",
+  "description": "WhatsApp-style FG inventory chat — SOH, SIT, DRR, DOI at SKU level",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#efeae2",
+  "theme_color": "#008069",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

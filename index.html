@@ -81,6 +81,9 @@
       <div class="t">FG Inventory Bot</div>
       <div class="s" id="sub">loading…</div>
     </div>
+    <div style="flex:1"></div>
+    <div id="clearBtn" title="Clear chat history" style="cursor:pointer;font-size:18px;opacity:.85;">🗑
+    </div>
   </div>
   <div id="chat"></div>
   <div id="chips"></div>
@@ -116,8 +119,36 @@ function add(kind, html){
 var ACTS='<div class="acts"><span data-a="copy">⧉ copy</span><span data-a="img">🖼 image</span><span data-a="wa">📤 forward</span><span data-a="reply">↩ reply</span></div>';
 function botReply(html){
   var t=add('bot','<span class="typing"><span></span><span></span><span></span></span>');
-  setTimeout(function(){ t.querySelector('.bub').innerHTML=html+ACTS+'<div class="ts">'+now()+'</div>'; chat.scrollTop=chat.scrollHeight; }, 350);
+  setTimeout(function(){ t.querySelector('.bub').innerHTML=html+ACTS+'<div class="ts">'+now()+'</div>'; chat.scrollTop=chat.scrollHeight; pushLog('bot', html); }, 350);
 }
+
+/* ---------- persistent chat history (this device/browser only) ---------- */
+var LOG_KEY='fg_chat_log_v1';
+function todayKey(){ return new Date().toISOString().slice(0,10); }
+function loadLog(){ try{ return JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); }catch(e){ return []; } }
+function saveLog(){ try{ localStorage.setItem(LOG_KEY, JSON.stringify(CHATLOG.slice(-200))); }catch(e){} }
+var CHATLOG = loadLog();
+function pushLog(kind, html){ CHATLOG.push({k:kind, h:html, t:now(), day:todayKey()}); saveLog(); }
+function addDayDivider(dayKey){
+  var label = dayKey===todayKey() ? 'TODAY' : dDisp(dayKey);
+  var div=document.createElement('div'); div.className='day'; div.innerHTML='<span>'+label+'</span>'; chat.appendChild(div);
+}
+function renderRestoredLog(){
+  var lastDay=null;
+  CHATLOG.forEach(function(m){
+    if (m.day!==lastDay){ addDayDivider(m.day); lastDay=m.day; }
+    var r=document.createElement('div'); r.className='row '+(m.k==='me'?'me':'bot');
+    r.innerHTML='<div class="bub">'+m.h+(m.k==='bot'?ACTS:'')+'<div class="ts">'+m.t+(m.k==='me'?' ✓✓':'')+'</div></div>';
+    chat.appendChild(r);
+  });
+  chat.scrollTop=chat.scrollHeight;
+}
+function clearChat(){
+  CHATLOG.length=0; saveLog(); chat.innerHTML='';
+  addDayDivider(todayKey());
+  botReply('🧹 Chat history cleared.<br>Data: <b>'+esc(D.sourceFile)+'</b> ('+esc(D.reportDate)+', '+fmtIN(D.rowCount)+' rows, '+S.length+' SKUs).');
+}
+document.getElementById('clearBtn').onclick=function(){ clearChat(); };
 function toast(msg){
   var el=document.getElementById('toast'); el.textContent=msg; el.style.opacity=1;
   setTimeout(function(){ el.style.opacity=0; }, 1800);
@@ -332,7 +363,8 @@ function rHelp(){
     +'• <b>low doi</b> / <b>doi &lt; 30</b> · <b>top drr</b> · <b>top value</b> · <b>sit report</b> · <b>trend</b> (add "last N days")<br>'
     +'• a <b>brand</b> (mm / bodywise / lj) or a <b>location</b> (mumbai, dark store…)<br>'
     +'<b>Sharing</b> — every reply has <b>⧉ copy</b>, <b>📤 forward</b> (opens WhatsApp with the numbers), <b>↩ reply</b><br>'
-    +'<b>Voice</b> — tap 🎤 and say <b>"FG summary"</b>, <b>"FG low doi"</b>, <b>"FG nutrimix trend"</b>';
+    +'<b>Voice</b> — tap 🎤 and say <b>"FG summary"</b>, <b>"FG low doi"</b>, <b>"FG nutrimix trend"</b><br>'
+    +'<b>History</b> — your chat is saved on this device; reopen the app and it\'s still here. Tap 🗑 or type <b>clear chat</b> to wipe it.';
 }
 
 /* ---------- query engine ---------- */
@@ -462,7 +494,9 @@ function answer(q){
 
 /* ---------- wiring ---------- */
 function ask(q){
+  if (/^\s*(clear (chat|history)|reset chat|new chat)\s*$/i.test(q)){ add('me', esc(q)); pushLog('me', esc(q)); clearChat(); return; }
   add('me', esc(q));
+  pushLog('me', esc(q));
   quoteBar.className=''; qtext.textContent='';
   var html;
   try { html = answer(q) || rHelp(); } catch(e){ html = 'Error: '+esc(e.message); }
@@ -559,8 +593,18 @@ micBtn.onclick=function(){
   listening ? stopMic() : startMic();
 };
 
-var day=document.createElement('div'); day.className='day'; day.innerHTML='<span>TODAY</span>'; chat.appendChild(day);
-add('bot','👋 <b>FG Inventory Bot</b> ready.<br>Data: <b>'+esc(D.sourceFile)+'</b> ('+esc(D.reportDate)+', '+fmtIN(D.rowCount)+' rows, '+S.length+' SKUs).<br>Type <b>summary</b> or tap a chip below.');
+if (CHATLOG.length){
+  renderRestoredLog();
+  if (CHATLOG[CHATLOG.length-1].day !== todayKey()){
+    addDayDivider(todayKey());
+    var backHtml='👋 Welcome back. Data: <b>'+esc(D.sourceFile)+'</b> ('+esc(D.reportDate)+', '+fmtIN(D.rowCount)+' rows, '+S.length+' SKUs).<br>Your previous chat is above — scroll up anytime, or tap 🗑 to clear it.';
+    add('bot', backHtml); pushLog('bot', backHtml);
+  }
+} else {
+  addDayDivider(todayKey());
+  var bootHtml='👋 <b>FG Inventory Bot</b> ready.<br>Data: <b>'+esc(D.sourceFile)+'</b> ('+esc(D.reportDate)+', '+fmtIN(D.rowCount)+' rows, '+S.length+' SKUs).<br>Type <b>summary</b> or tap a chip below.<br><small>Your chats are saved on this device — tap 🗑 anytime to clear them.</small>';
+  add('bot', bootHtml); pushLog('bot', bootHtml);
+}
 };
 </script>
 <script>/* html2canvas v1.4.1 inline */

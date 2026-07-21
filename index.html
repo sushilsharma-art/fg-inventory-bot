@@ -122,7 +122,14 @@ function botReply(html){
   setTimeout(function(){ t.querySelector('.bub').innerHTML=html+ACTS+'<div class="ts">'+now()+'</div>'; chat.scrollTop=chat.scrollHeight; pushLog('bot', html); }, 350);
 }
 
-/* ---------- persistent chat history (this device/browser only) ---------- */
+/* ---------- persistent chat history (this device/browser only) ----------
+   IMPORTANT: LOG_KEY must NEVER change across app versions/deploys. It is
+   the localStorage key holding the user's saved conversation. Renaming it
+   (e.g. to 'fg_chat_log_v2') orphans all existing history — the app would
+   silently start a fresh empty chat for every returning user. Every future
+   edit to this file must keep this exact key. If a breaking data-shape
+   change to log entries is ever unavoidable, migrate old entries into the
+   new shape on load instead of bumping the key. */
 var LOG_KEY='fg_chat_log_v1';
 function todayKey(){ return new Date().toISOString().slice(0,10); }
 function loadLog(){ try{ return JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); }catch(e){ return []; } }
@@ -194,7 +201,7 @@ S.forEach(function(s){
   var b = brands[s.brand] || (brands[s.brand]={soh:0,sit:0,val:0,drr:0,n:0,low:0});
   b.soh+=s.soh; b.sit+=s.sit; b.val+=s.val; b.drr+=s.drr;
   if (s.soh>0) b.n++;
-  if (s.drr>0 && s.doi>0 && s.doi<21) b.low++;
+  if (s.drr>100 && s.doi>0 && s.doi<21) b.low++;
   s.locs.forEach(function(L){
     var t = locTot[L.n] || (locTot[L.n]={soh:0,sit:0,n:0});
     t.soh+=L.s; t.sit+=L.t; if(L.s>0) t.n++;
@@ -218,7 +225,7 @@ function rSummary(){
     +'<div>Overall DRR</div><div>'+fmtIN(TOT.drr)+' /day</div>'
     +'<div>Overall DOI</div><div>'+doiAll.toFixed(1)+' days</div>'
     +'<div>Active SKUs (SOH&gt;0)</div><div>'+act+' of '+S.length+'</div></div>';
-  h+='<table><tr><th>Brand</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">Value</th><th class="num">DRR</th><th class="num">DOI</th><th class="num">&lt;21 DOI</th></tr>';
+  h+='<table><tr><th>Brand</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">Value</th><th class="num">DRR</th><th class="num">DOI</th><th class="num">&lt;21 DOI (DRR&gt;100)</th></tr>';
   Object.keys(brands).sort(function(a,b){return brands[b].val-brands[a].val;}).forEach(function(k){
     var b=brands[k], doi=b.drr>0?b.soh/b.drr:0;
     if (b.soh===0 && b.val===0) return;
@@ -371,6 +378,9 @@ function rHelp(){
 var BRAND_ALIAS = {mm:'ManMatters',manmatters:'ManMatters','man matters':'ManMatters',
   bw:'BeBodywise',bb:'BeBodywise',bodywise:'BeBodywise',bebodywise:'BeBodywise','be bodywise':'BeBodywise',
   lj:'LittleJoys',littlejoys:'LittleJoys','little joys':'LittleJoys','root labs':'Root Labs',own:'OWN'};
+var BRAND_TABS = '<br><b>Brand-wise top DRR:</b><br>'
+  +pill('top drr mm','ManMatters')+pill('top drr lj','LittleJoys')
+  +pill('top drr bw','BeBodywise')+pill('top drr own','OWN');
 
 function answer(q){
   var raw=q.trim(), t=raw.toLowerCase().replace(/\s+/g,' ');
@@ -437,13 +447,23 @@ function answer(q){
   var m=t.match(/doi\s*(?:<|below|under|less than)\s*(\d+)/) || (/low doi|risk|stock ?out/.test(t)?[0,'21']:null);
   if (m){
     var th=parseInt(m[1],10);
-    var list=S.filter(function(s){return s.drr>0 && s.soh>0 && s.doi>0 && s.doi<th;}).sort(function(a,b){return a.doi-b.doi;});
-    if(!list.length) return 'No selling SKUs below '+th+' days DOI. ✅';
-    return '<h4>⚠️ '+list.length+' SKUs below '+th+'d DOI</h4>'+skuTable(list.slice(0,25))+(list.length>25?'<small>Showing first 25 of '+list.length+'.</small>':'');
+    var showAll=/\ball\b/.test(t);
+    var minDrr=showAll?0:100;
+    var list=S.filter(function(s){return s.drr>minDrr && s.soh>0 && s.doi>0 && s.doi<th;}).sort(function(a,b){return a.doi-b.doi;});
+    if(!list.length) return 'No SKUs'+(showAll?'':' with DRR&gt;100')+' below '+th+' days DOI. ✅';
+    return '<h4>⚠️ '+list.length+' SKUs below '+th+'d DOI'+(showAll?'':' (DRR&gt;100 only)')+'</h4>'+skuTable(list.slice(0,25))+(list.length>25?'<small>Showing first 25 of '+list.length+'.</small>':'')+(showAll?'':'<br><small>Filtered to DRR&gt;100 to hide low-velocity noise. For the unfiltered list ask "doi &lt; '+th+' all".</small>');
+  }
+  var topDrrBrandQ = t.match(/^top (?:drr|sell|mover)s?\s+(.+)$/);
+  if (topDrrBrandQ){
+    var bk2 = BRAND_ALIAS[topDrrBrandQ[1].trim()] || (Object.keys(brands).find(function(b){return b.toLowerCase()===topDrrBrandQ[1].trim();}));
+    if (bk2){
+      var l4=S.filter(function(s){return s.brand===bk2;}).sort(function(a,b){return b.drr-a.drr;}).slice(0,15);
+      return '<h4>🏆 Top 15 by DRR — '+esc(bk2)+'</h4>'+skuTable(l4)+BRAND_TABS;
+    }
   }
   if (/top (drr|sell|mover)|fastest/.test(t)){
     var l1=S.slice().sort(function(a,b){return b.drr-a.drr;}).slice(0,15);
-    return '<h4>🏆 Top 15 by Overall DRR</h4>'+skuTable(l1);
+    return '<h4>🏆 Top 15 by Overall DRR</h4>'+skuTable(l1)+BRAND_TABS;
   }
   if (/top value|highest value|inventory value/.test(t)){
     var l2=S.slice().sort(function(a,b){return b.val-a.val;}).slice(0,15);
@@ -461,8 +481,10 @@ function answer(q){
   if (bk && brands[bk]){
     var b=brands[bk], doi=b.drr>0?b.soh/b.drr:0;
     var top=S.filter(function(s){return s.brand===bk;}).sort(function(a,b2){return b2.drr-a.drr;}).slice(0,10);
-    var low=S.filter(function(s){return s.brand===bk&&s.drr>0&&s.soh>0&&s.doi>0&&s.doi<21;}).length;
-    return '<h4>'+esc(bk)+'</h4><div class="kv"><div>SOH</div><div>'+fmtIN(b.soh)+'</div><div>SIT</div><div>'+fmtIN(b.sit)+'</div><div>Value</div><div>'+money(b.val)+'</div><div>DRR</div><div>'+fmtIN(b.drr)+'</div><div>DOI</div><div>'+doi.toFixed(1)+' days</div><div>SKUs &lt;21d DOI</div><div>'+low+'</div></div><b>Top movers:</b>'+skuTable(top);
+    var low=S.filter(function(s){return s.brand===bk&&s.drr>100&&s.soh>0&&s.doi>0&&s.doi<21;}).length;
+    var h4b='<h4>'+esc(bk)+'</h4><div class="kv"><div>SOH</div><div>'+fmtIN(b.soh)+'</div><div>SIT</div><div>'+fmtIN(b.sit)+'</div><div>Value</div><div>'+money(b.val)+'</div><div>DRR</div><div>'+fmtIN(b.drr)+'</div><div>DOI</div><div>'+doi.toFixed(1)+' days</div><div>SKUs &lt;21d DOI (DRR&gt;100)</div><div>'+low+'</div></div><b>Top movers by DRR:</b>'+skuTable(top);
+    h4b+=BRAND_TABS;
+    return h4b;
   }
 
   var lk = Object.keys(locTot).find(function(L){return L.toLowerCase()===t || L.toLowerCase().indexOf(t)===0;});

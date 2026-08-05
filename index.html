@@ -198,8 +198,9 @@ S.forEach(function(s){ byCode[s.code.toLowerCase()] = s; });
 /* ---------- pre-computed aggregates ---------- */
 var brands = {}, locTot = {};
 S.forEach(function(s){
-  var b = brands[s.brand] || (brands[s.brand]={soh:0,sit:0,val:0,drr:0,n:0,low:0});
+  var b = brands[s.brand] || (brands[s.brand]={soh:0,sit:0,val:0,drr:0,n:0,low:0,fresh80:0,freshLE80:0});
   b.soh+=s.soh; b.sit+=s.sit; b.val+=s.val; b.drr+=s.drr;
+  b.fresh80+=(s.fresh80||0); b.freshLE80+=(s.freshLE80||0);
   if (s.soh>0) b.n++;
   if (s.drr>100 && s.doi>0 && s.doi<21) b.low++;
   s.locs.forEach(function(L){
@@ -207,8 +208,8 @@ S.forEach(function(s){
     t.soh+=L.s; t.sit+=L.t; if(L.s>0) t.n++;
   });
 });
-var TOT = {soh:0,sit:0,val:0,drr:0,dmg:0,po:0};
-S.forEach(function(s){ TOT.soh+=s.soh; TOT.sit+=s.sit; TOT.val+=s.val; TOT.drr+=s.drr; TOT.dmg+=s.dmg; TOT.po+=s.openPO; });
+var TOT = {soh:0,sit:0,val:0,drr:0,dmg:0,po:0,fresh80:0,freshLE80:0};
+S.forEach(function(s){ TOT.soh+=s.soh; TOT.sit+=s.sit; TOT.val+=s.val; TOT.drr+=s.drr; TOT.dmg+=s.dmg; TOT.po+=s.openPO; TOT.fresh80+=(s.fresh80||0); TOT.freshLE80+=(s.freshLE80||0); });
 
 /* ---------- renderers ---------- */
 function rSummary(){
@@ -224,14 +225,24 @@ function rSummary(){
     +'<div>Open Purchase</div><div>'+fmtIN(TOT.po)+'</div>'
     +'<div>Overall DRR</div><div>'+fmtIN(TOT.drr)+' /day</div>'
     +'<div>Overall DOI</div><div>'+doiAll.toFixed(1)+' days</div>'
-    +'<div>Active SKUs (SOH&gt;0)</div><div>'+act+' of '+S.length+'</div></div>';
-  h+='<table><tr><th>Brand</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">Value</th><th class="num">DRR</th><th class="num">DOI</th><th class="num">&lt;21 DOI (DRR&gt;100)</th></tr>';
+    +'<div>Active SKUs (SOH&gt;0)</div><div>'+act+' of '+S.length+'</div>';
+  if (D.freshnessAvailable){
+    h+='<div>Freshness &gt;80% pending shelf life</div><div>'+fmtIN(TOT.fresh80)+' units</div>'
+      +'<div>Freshness ≤80% pending shelf life</div><div>'+fmtIN(TOT.freshLE80)+' units</div>';
+  }
+  h+='</div>';
+  h+='<table><tr><th>Brand</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">Value</th><th class="num">DRR</th><th class="num">DOI</th><th class="num">&lt;21 DOI (DRR&gt;100)</th>'
+    +(D.freshnessAvailable ? '<th class="num">Fresh &gt;80%</th><th class="num">Fresh ≤80%</th>' : '')+'</tr>';
   Object.keys(brands).sort(function(a,b){return brands[b].val-brands[a].val;}).forEach(function(k){
     var b=brands[k], doi=b.drr>0?b.soh/b.drr:0;
     if (b.soh===0 && b.val===0) return;
-    h+='<tr><td>'+esc(k)+'</td><td class="num">'+fmtIN(b.soh)+'</td><td class="num">'+fmtIN(b.sit)+'</td><td class="num">'+money(b.val)+'</td><td class="num">'+fmtIN(b.drr)+'</td>'+doiCell(doi)+'<td class="num '+(b.low?'red':'')+'">'+b.low+'</td></tr>';
+    h+='<tr><td>'+esc(k)+'</td><td class="num">'+fmtIN(b.soh)+'</td><td class="num">'+fmtIN(b.sit)+'</td><td class="num">'+money(b.val)+'</td><td class="num">'+fmtIN(b.drr)+'</td>'+doiCell(doi)+'<td class="num '+(b.low?'red':'')+'">'+b.low+'</td>'
+      +(D.freshnessAvailable ? '<td class="num">'+fmtIN(b.fresh80)+'</td><td class="num">'+fmtIN(b.freshLE80)+'</td>' : '')+'</tr>';
   });
   h+='</table>';
+  if (!D.freshnessAvailable){
+    h+='<small>Freshness columns hidden — no matching Shelfwise_Inventory_Summary file found for this date.</small>';
+  }
   h+='<b>DOI health (selling SKUs):</b> <span class="red">'+bk.r+' below 21d</span> · <span class="amb">'+bk.a+' at 21–45d</span> · <span class="grn">'+bk.g+' at 46–90d</span> · '+bk.x+' above 90d';
   h+='<br><br>Try: '+pill('low doi')+pill('top drr')+pill('sit report')+' or type any SKU / product name.';
   return h;

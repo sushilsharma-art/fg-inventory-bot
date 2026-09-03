@@ -184,15 +184,24 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
         if dimension not in output:
             output[dimension] = ""
     output = output[CANONICAL_DIMENSIONS]
-    # Tableau crosstabs can include visual subtotal rows for each channel. They
-    # have a channel label but neither SKU nor product name and repeat values
-    # already represented by detail rows.  A blank SKU with a real product name
-    # is legitimate unmapped-product detail and must remain in the totals.
+    # Tableau renders hierarchical row labels only on the first channel row for
+    # each product.  Blank SKU/product cells below it inherit the group above;
+    # they are real channel detail, not subtotals.  A row with a product name
+    # but no SKU starts a legitimate unmapped-product group and keeps its SKU
+    # blank.  Only leading rows before the first product group are visual totals.
     blank_sku = output["child_sku"].fillna("").astype(str).str.strip().eq("")
     blank_product = output["product_name"].fillna("").astype(str).str.strip().eq("")
-    subtotal_mask = blank_sku & blank_product
-    subtotal_rows_ignored = int(subtotal_mask.sum())
-    output = output.loc[~subtotal_mask].copy()
+    group_start = ~blank_sku | ~blank_product
+    group_number = group_start.cumsum()
+    leading_total_mask = group_number.eq(0)
+    subtotal_rows_ignored = int(leading_total_mask.sum())
+    hierarchy_continuation_rows_filled = int((~group_start & ~leading_total_mask).sum())
+    output = output.loc[~leading_total_mask].copy()
+    group_number = group_number.loc[output.index]
+    for dimension in CANONICAL_DIMENSIONS[:-1]:
+        output[dimension] = output.groupby(group_number, sort=False)[dimension].transform(
+            lambda series: series.replace("", pd.NA).ffill().bfill().fillna("")
+        )
     output["_entity_channel"] = _entity_key(output)
     if output["channel_name"].eq("").any():
         raise ValueError(f"Blank channel rows found in {path.name}")
@@ -215,6 +224,7 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
         "encoding": encoding,
         "detail_rows": int(len(output)),
         "subtotal_rows_ignored": subtotal_rows_ignored,
+        "hierarchy_continuation_rows_filled": hierarchy_continuation_rows_filled,
         "date_min": min(canonical_dates),
         "date_max": max(canonical_dates),
         "distinct_days": len(canonical_dates),

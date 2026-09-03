@@ -158,6 +158,11 @@ def _calendar_date_label(value: Any) -> str:
     return parsed.date().isoformat()
 
 
+def _canonical_datetimes(values: list[str]) -> pd.DatetimeIndex:
+    """Parse the ISO labels emitted by ``_calendar_date_label`` unambiguously."""
+    return pd.to_datetime(values, format="%Y-%m-%d", errors="raise")
+
+
 def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[str, Any]]:
     raw, date_columns, encoding = _read_table(path)
     canonical_dates = [_calendar_date_label(column) for column in date_columns]
@@ -369,7 +374,7 @@ def normalize_exports(
         ["channel_name", "child_sku", "product_name"]
     ).reset_index(drop=True)
 
-    parsed_dates = pd.to_datetime(common_dates)
+    parsed_dates = _canonical_datetimes(common_dates)
     quality = {
         "format_match": True,
         "normalization": (
@@ -577,7 +582,7 @@ def refresh_history(
     quantity, value, date_columns, quality = normalize_exports(
         quantity_path, value_path
     )
-    parsed_dates = pd.to_datetime(date_columns, dayfirst=True)
+    parsed_dates = _canonical_datetimes(date_columns)
     months = sorted(parsed_dates.strftime("%Y-%m").unique())
     if len(months) != 1:
         raise ValueError("A scheduled Tableau refresh must contain exactly one month")

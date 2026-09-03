@@ -280,8 +280,8 @@ class InventoryPipelineTests(unittest.TestCase):
     def test_tableau_quantity_dimensions_are_restored_from_value_export(self) -> None:
         quantity_path = self.root / "EComm Overall.csv"
         value_path = self.root / "EComm Overall Sales.csv"
-        quantity_dates = ["2026-08-01 00:00:00", "2026-08-02 00:00:00", "2026-08-03 00:00:00"]
-        value_dates = ["31/07/2026", "01/08/2026", "02/08/2026"]
+        quantity_dates = ["2026-08-01 00:00:00", "2026-08-13 00:00:00", "2026-08-14 00:00:00"]
+        value_dates = ["31/07/2026", "01/08/2026", "13/08/2026"]
 
         with quantity_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -324,9 +324,9 @@ class InventoryPipelineTests(unittest.TestCase):
         quantity, value, date_columns, quality = normalize_exports(
             quantity_path, value_path
         )
-        self.assertEqual(date_columns, ["2026-08-01", "2026-08-02"])
+        self.assertEqual(date_columns, ["2026-08-01", "2026-08-13"])
         self.assertTrue(quality["format_match"])
-        self.assertEqual(quality["quantity_only_dates_ignored"], ["2026-08-03"])
+        self.assertEqual(quality["quantity_only_dates_ignored"], ["2026-08-14"])
         self.assertEqual(quality["value_only_dates_ignored"], [])
         self.assertEqual(quality["older_value_dates_ignored"], ["2026-07-31"])
         self.assertEqual(quality["target_month"], "2026-08")

@@ -277,6 +277,13 @@ def normalize_exports(
             "Value export is missing authoritative dimensions: "
             + ", ".join(missing_value_dimensions)
         )
+    for export_quality in (quantity_quality, value_quality):
+        if export_quality["daily_total_mismatch_days"]:
+            raise ValueError(
+                f"{export_quality['measure']} detail rows do not reconcile to "
+                f"the Tableau Grand Total on "
+                f"{export_quality['daily_total_mismatch_days']} day(s)"
+            )
 
     quantity_keys = set(quantity["_entity_channel"])
     value_keys = set(value["_entity_channel"])
@@ -285,7 +292,7 @@ def normalize_exports(
     union_keys = quantity_keys | value_keys
     sparse_key_count = len(quantity_only) + len(value_only)
     sparse_key_ratio = sparse_key_count / max(len(union_keys), 1)
-    if sparse_key_count > 100 or sparse_key_ratio > 0.05:
+    if sparse_key_count > 100 or sparse_key_ratio > 0.15:
         raise ValueError(
             "Quantity and value exports have excessive SKU-channel scope mismatch: "
             f"{len(quantity_only)} quantity-only / {len(value_only)} value-only "

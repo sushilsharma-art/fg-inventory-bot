@@ -290,6 +290,8 @@ class InventoryPipelineTests(unittest.TestCase):
                 + dates
             )
             writer.writerow(["Grand Total", "Total", "Total", "Total", 5, 7])
+            writer.writerow(["", "", "Amazon", "", 2, 3])
+            writer.writerow(["", "", "WebApp", "", 3, 4])
             writer.writerow(["SKU1", "One", "Amazon", "One", 2, 3])
             writer.writerow(["SKU2", "Two", "WebApp", "Two", 3, 4])
 
@@ -309,6 +311,8 @@ class InventoryPipelineTests(unittest.TestCase):
                 + dates
             )
             writer.writerow(["Grand Total"] + ["Total"] * 6 + [500, 700])
+            writer.writerow(["", "", "", "", "", "Amazon", "", 200, 300])
+            writer.writerow(["", "", "", "", "", "WebApp", "", 300, 400])
             writer.writerow(
                 ["SKU1", "One", "Sub1", "Cat1", "MM", "Amazon", "One", 200, 300]
             )
@@ -323,6 +327,8 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertTrue(quality["format_match"])
         self.assertEqual(quantity.loc[0, "sub_category"], "Sub1")
         self.assertEqual(quantity.loc[0, "brand"], "MM")
+        self.assertEqual(quality["quantity"]["subtotal_rows_ignored"], 2)
+        self.assertEqual(quality["value"]["subtotal_rows_ignored"], 2)
         self.assertEqual(float(quantity[dates].sum().sum()), 12.0)
         self.assertEqual(float(value[dates].sum().sum()), 1200.0)
 

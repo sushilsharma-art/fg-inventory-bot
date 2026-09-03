@@ -169,6 +169,12 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
         if dimension not in output:
             output[dimension] = ""
     output = output[CANONICAL_DIMENSIONS]
+    # Tableau crosstabs can include visual subtotal rows for each channel. They
+    # have a channel label but no SKU and repeat values already represented by
+    # the SKU detail rows, so they must not enter SKU-grain reconciliation.
+    blank_sku = output["child_sku"].fillna("").astype(str).str.strip().eq("")
+    subtotal_rows_ignored = int(blank_sku.sum())
+    output = output.loc[~blank_sku].copy()
     output["_entity_channel"] = _entity_key(output)
     if output["channel_name"].eq("").any():
         raise ValueError(f"Blank channel rows found in {path.name}")
@@ -189,6 +195,7 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
         "file": path.name,
         "encoding": encoding,
         "detail_rows": int(len(output)),
+        "subtotal_rows_ignored": subtotal_rows_ignored,
         "date_min": pd.to_datetime(date_columns, dayfirst=True).min().date().isoformat(),
         "date_max": pd.to_datetime(date_columns, dayfirst=True).max().date().isoformat(),
         "distinct_days": len(date_columns),

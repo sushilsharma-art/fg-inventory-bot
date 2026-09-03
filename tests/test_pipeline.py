@@ -281,7 +281,7 @@ class InventoryPipelineTests(unittest.TestCase):
         quantity_path = self.root / "EComm Overall.csv"
         value_path = self.root / "EComm Overall Sales.csv"
         quantity_dates = ["2026-08-01 00:00:00", "2026-08-02 00:00:00", "2026-08-03 00:00:00"]
-        value_dates = ["01/08/2026", "02/08/2026"]
+        value_dates = ["31/07/2026", "01/08/2026", "02/08/2026"]
 
         with quantity_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -311,14 +311,14 @@ class InventoryPipelineTests(unittest.TestCase):
                 ]
                 + value_dates
             )
-            writer.writerow(["Grand Total"] + ["Total"] * 6 + [500, 700])
-            writer.writerow(["", "", "", "", "", "Amazon", "", 200, 300])
-            writer.writerow(["", "", "", "", "", "WebApp", "", 300, 400])
+            writer.writerow(["Grand Total"] + ["Total"] * 6 + [100, 500, 700])
+            writer.writerow(["", "", "", "", "", "Amazon", "", 40, 200, 300])
+            writer.writerow(["", "", "", "", "", "WebApp", "", 60, 300, 400])
             writer.writerow(
-                ["SKU1", "One", "Sub1", "Cat1", "MM", "Amazon", "One", 200, 300]
+                ["SKU1", "One", "Sub1", "Cat1", "MM", "Amazon", "One", 40, 200, 300]
             )
             writer.writerow(
-                ["SKU2", "Two", "Sub2", "Cat2", "LJ", "WebApp", "Two", 300, 400]
+                ["SKU2", "Two", "Sub2", "Cat2", "LJ", "WebApp", "Two", 60, 300, 400]
             )
 
         quantity, value, date_columns, quality = normalize_exports(
@@ -328,6 +328,8 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertTrue(quality["format_match"])
         self.assertEqual(quality["quantity_only_dates_ignored"], ["2026-08-03"])
         self.assertEqual(quality["value_only_dates_ignored"], [])
+        self.assertEqual(quality["older_value_dates_ignored"], ["2026-07-31"])
+        self.assertEqual(quality["target_month"], "2026-08")
         self.assertEqual(quantity.loc[0, "sub_category"], "Sub1")
         self.assertEqual(quantity.loc[0, "brand"], "MM")
         self.assertEqual(quality["quantity"]["subtotal_rows_ignored"], 2)

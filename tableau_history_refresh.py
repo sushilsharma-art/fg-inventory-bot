@@ -234,19 +234,37 @@ def normalize_exports(
     value, value_dates, value_quality = _extract(value_path, "sales_value")
     quantity_date_set = set(quantity_dates)
     value_date_set = set(value_dates)
-    common_dates = sorted(quantity_date_set & value_date_set)
-    quantity_only_dates = sorted(quantity_date_set - value_date_set)
-    value_only_dates = sorted(value_date_set - quantity_date_set)
+    quantity_latest_month = max(quantity_date_set)[:7]
+    value_latest_month = max(value_date_set)[:7]
+    if quantity_latest_month != value_latest_month:
+        raise ValueError(
+            "Quantity and value exports do not have the same latest month: "
+            f"quantity={quantity_latest_month}, value={value_latest_month}"
+        )
+
+    target_month = quantity_latest_month
+    quantity_target_dates = {
+        value for value in quantity_date_set if value.startswith(target_month + "-")
+    }
+    value_target_dates = {
+        value for value in value_date_set if value.startswith(target_month + "-")
+    }
+    common_dates = sorted(quantity_target_dates & value_target_dates)
+    quantity_only_dates = sorted(quantity_target_dates - value_target_dates)
+    value_only_dates = sorted(value_target_dates - quantity_target_dates)
+    older_quantity_dates_ignored = sorted(quantity_date_set - quantity_target_dates)
+    older_value_dates_ignored = sorted(value_date_set - value_target_dates)
     if not common_dates:
         raise ValueError(
-            "Quantity and value exports have no common calendar dates: "
+            "Quantity and value exports have no common calendar dates in their latest month: "
             f"quantity {min(quantity_dates)}..{max(quantity_dates)}, "
             f"value {min(value_dates)}..{max(value_dates)}"
         )
-    overlap_ratio = len(common_dates) / len(quantity_date_set | value_date_set)
+    overlap_ratio = len(common_dates) / len(quantity_target_dates | value_target_dates)
     if overlap_ratio < 0.5:
         raise ValueError(
-            "Quantity and value exports have insufficient calendar-date overlap: "
+            "Quantity and value exports have insufficient calendar-date overlap "
+            f"in {target_month}: "
             f"quantity-only={quantity_only_dates[:5]}, value-only={value_only_dates[:5]}"
         )
     missing_value_dimensions = [
@@ -306,6 +324,9 @@ def normalize_exports(
         "matched_rows": int(len(canonical_quantity)),
         "quantity_only_dates_ignored": quantity_only_dates,
         "value_only_dates_ignored": value_only_dates,
+        "older_quantity_dates_ignored": older_quantity_dates_ignored,
+        "older_value_dates_ignored": older_value_dates_ignored,
+        "target_month": target_month,
         "calendar_date_overlap_ratio": round(overlap_ratio, 6),
         "date_min": parsed_dates.min().date().isoformat(),
         "date_max": parsed_dates.max().date().isoformat(),

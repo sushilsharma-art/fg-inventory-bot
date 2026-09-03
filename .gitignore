@@ -1,0 +1,18 @@
+__pycache__/
+.pytest_cache/
+work/
+tmp/
+*.pyc
+.env
+passcode.txt
+config/Location master.xlsx
+config/facility_overrides.csv
+ORIGINAL_CLAUDE_DOCUMENTATION.md
+src/FG_Inventory_Chat.html
+site/data.enc.json.*.tmp
+site/status.json.*.tmp
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/**
+!data/history_seed.enc.json

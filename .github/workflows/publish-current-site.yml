@@ -1,0 +1,40 @@
+name: Publish Current FG Inventory Bot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/publish-current-site.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fg-inventory-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out bot
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload verified site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Publish current snapshot
+        id: deployment
+        uses: actions/deploy-pages@v4

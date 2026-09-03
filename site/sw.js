@@ -1,6 +1,7 @@
-/* FG Inventory Bot — service worker */
-var CACHE = 'fg-bot-v1';
-var SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+/* FG Inventory Assistant — service worker */
+var CACHE = 'fg-chat-v8-lite';
+/* Keep the first mobile load small. The 1.6 MB social preview is not app shell. */
+var SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './pako_inflate.min.js'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function(){ return self.skipWaiting(); }));
@@ -14,8 +15,8 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
-  if (url.pathname.endsWith('data.enc.json')) {
-    /* data: network-first so you always get today's numbers when online */
+  if (url.pathname.endsWith('data.enc.json') || url.pathname.endsWith('index.html') || url.pathname.endsWith('/')) {
+    /* Data and chat shell are network-first so everyone receives today's bot. */
     e.respondWith(
       fetch(e.request).then(function (r) {
         var copy = r.clone();
@@ -24,7 +25,7 @@ self.addEventListener('fetch', function (e) {
       }).catch(function () { return caches.match(e.request); })
     );
   } else {
-    /* app shell: cache-first, refresh in background */
+    /* Small static assets are cache-first. */
     e.respondWith(
       caches.match(e.request).then(function (hit) {
         var net = fetch(e.request).then(function (r) {

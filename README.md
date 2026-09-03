@@ -1,77 +1,33 @@
-# FG Inventory Bot — GitHub Pages PWA
+# FG Inventory Assistant
 
-WhatsApp-style chat over the daily FG inventory file. Data is AES-256-GCM
-encrypted (`data.enc.json`); the app asks for a passcode on first open.
+A secure, WhatsApp-style inventory bot built from the original Claude implementation. It answers FG inventory questions conversationally from any phone or browser; it is intentionally not a dashboard or control tower.
 
-## Files
+## What users can ask
 
-| File | What it is |
-|---|---|
-| index.html | The app (passcode gate + chat) |
-| data.enc.json | Encrypted inventory data — replace this daily |
-| manifest.webmanifest, icon-192/512.png | PWA install metadata |
-| sw.js | Service worker (offline cache, fresh data when online) |
+- `summary`, `low doi`, `near expiry`, `out of stock`, `excess stock`
+- Any SKU code or product name, including natural questions such as `how much stock do we have for nutrimix vanilla`
+- Follow-ups such as `this sku in Mumbai` or `this sku trend`
+- Brand, location, day-wise trend, date comparison, SIT and top-DRR questions
+- Secondary-sales questions such as `total sale`, `channel level sale`, `MTD sale`, `last month sale`, `channel DRR`, `Blinkit sales`, and `<SKU> channel DRR`. Channel-level sales show current MTD, the previous complete month, and the latest three complete months in both units and value.
 
-## First deployment
+Every answer can be copied, saved as an image, forwarded to WhatsApp, or used as reply context. The stable chat-history key remains `fg_chat_log_v1`.
 
-1. Sign in at github.com → **New repository** → name it `fg-inventory-bot` → **Public** → Create.
-2. **uploading an existing file** → drag ALL files from this `deploy` folder → Commit.
-3. Repo **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, folder `/ (root)` → Save.
-4. Wait ~2 min. Your app is at: `https://<your-username>.github.io/fg-inventory-bot/`
+## Daily cloud refresh
 
-## Daily data update
+The morning workflow in `.github/workflows/daily-refresh.yml` runs at 10:45 AM IST, with three 30-minute retries. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files, authenticates to Tableau Cloud with a Personal Access Token, downloads the approved `EComm Overall` quantity and `EComm Overall Sales` value crosstabs, reconciles them, refreshes secondary-sales history, rebuilds the encrypted WhatsApp-style bot, and publishes the verified snapshot. The evening workflow independently checks Anshul Bhatkar's dated `Channel Sales Tracker Dump` attachment at 5:40 PM IST, with 6:00 PM and 6:30 PM retries. Once the repository and secrets are configured, no computer needs to remain switched on.
 
-After the 11 AM task runs, `deploy/data.enc.json` is regenerated. In the repo:
-open `data.enc.json` → pencil/… menu → *Delete*, then upload the new one
-(or just drag it into *Upload files* — it overwrites). Nothing else changes.
+Required repository secret: `FG_BOT_PASSCODE`.
 
-## Install on phone (PWA)
+Required Tableau repository secrets: `TABLEAU_PAT_NAME` and `TABLEAU_PAT_SECRET`.
 
-- **iPhone**: open the URL in Safari → Share → **Add to Home Screen**.
-- **Android**: open in Chrome → menu → **Install app**.
+Optional Gmail source secrets: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Without them, the workflow uses the validated UniCommerce timestamp scan.
 
-Voice ("FG summary") works on the hosted version, including iPhone Safari.
+Optional repository variable: `FG_BOT_DATA_URL`, pointing to the deployed `data.enc.json`, preserves rolling history across runs.
 
-## Security notes
+Optional Tableau variables are `TABLEAU_SERVER_URL`, `TABLEAU_SITE_CONTENT_URL`, `TABLEAU_WORKBOOK_CONTENT_URL`, `TABLEAU_QUANTITY_VIEW`, and `TABLEAU_VALUE_VIEW`; the Man Matters production defaults are used when they are blank.
 
-- NEVER upload `passcode.txt` (it stays in the local folder only).
-- Anyone with the URL sees only encrypted bytes; the passcode unlocks it
-  on-device. Share the passcode privately, not in the repo.
-- To change the passcode: edit `passcode.txt`, re-run `build_chat_data.py`,
-  re-upload `data.enc.json`, and tell users the new code (old cached
-  passcodes will simply fail and re-prompt).
+The workflow preserves the secondary-sales SQLite history in a private GitHub Actions cache. A passcode-encrypted seed is included only for first deployment or cache recovery. The facility mapping is also stored only as a passcode-encrypted configuration bundle. Raw Tableau, inventory, mapping, and Gmail files are excluded from the public repository.
 
-## Chat history persistence — do not break this
+## Local test
 
-Each user's conversation is saved in their browser's `localStorage` under
-the key `fg_chat_log_v1` (see `LOG_KEY` in index.html). This key must
-**never be renamed** in any future update — doing so silently wipes every
-user's saved chat on their next visit. If a log entry's data shape ever
-needs to change, migrate existing entries on load rather than bumping the
-key. Uploading a new `index.html` or `data.enc.json` to the repo does NOT
-by itself clear anyone's history — only a key rename or the user tapping
-🗑 does.
-
-## Known data-quality notes (source file, not this app)
-
-- **Mumbai DOI** (top card): the source file's `Mumbai DOI` column is
-  computed hub-wide (Mumbai + RTV Mumbai + B2B Mumbai combined), which can
-  disagree with the plain "Mumbai" row in the location breakdown below (RTV/
-  B2B rows are intentionally hidden there). The app recomputes the top-card
-  Mumbai DOI on the same depot-only basis as the breakdown table so the two
-  numbers shown together always agree.
-- **Dark Store DRR/DOI**: the source file never populates per-depot
-  `Location DRR`/`Location DOI` for Dark Store rows (always 0), even when
-  SOH is large. The app derives a real figure as
-  `Overall DRR − DRR without DS` (verified non-negative across all 367 SKUs
-  with Dark Store stock in the 21-07-2026 file).
-- **Many other secondary-channel locations** (B2B offline/ecomm, RTV,
-  marketplace "MP …" depots, Aramex, "Not Consider", "Unknown") also have
-  `Location DRR` = 0 for ~100% of rows in the source file — this is an
-  upstream data gap, not something derivable from another column, so these
-  show DRR 0 / DOI "—" truthfully rather than a guessed number. Several of
-  these (Not Consider, RTV*, plain "Offline") are hidden entirely from the
-  location breakdown by request; the rest still appear with zero DRR/DOI.
-- **Low DOI report**: filtered to SKUs with DRR > 100 by default (hides
-  low-velocity noise) — both the "low doi" list and the brand summary's
-  "<21 DOI" counts. Ask "doi < 21 all" for the unfiltered list.
+Build `site/data.enc.json` with `cloud_runner.py`, serve the `site` folder over HTTP, and open the local URL. The passcode is never included in the published site.

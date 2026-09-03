@@ -1,0 +1,122 @@
+name: FG Bot Evening Secondary Sales Refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: Optional report date (YYYY-MM-DD)
+        required: false
+        type: string
+  schedule:
+    # GitHub schedules use UTC: 17:40, 18:00 and 18:30 IST retries.
+    - cron: "10 12 * * *"
+    - cron: "30 12 * * *"
+    - cron: "0 13 * * *"
+
+concurrency:
+  group: fg-inventory-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out bot
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+
+      - name: Restore durable secondary-sales history
+        uses: actions/cache@v4
+        with:
+          path: data/secondary_sales_history.sqlite
+          key: fg-secondary-history-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fg-secondary-history-${{ runner.os }}-
+
+      - name: Build verified inventory and secondary-sales snapshot
+        env:
+          FG_BOT_PASSCODE: ${{ secrets.FG_BOT_PASSCODE }}
+          FG_BOT_DATA_URL: ${{ vars.FG_BOT_DATA_URL }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          INPUT_RUN_DATE: ${{ inputs.run_date }}
+        shell: bash
+        run: |
+          args=(--require-channel-sales)
+          if [[ -n "$INPUT_RUN_DATE" ]]; then args+=(--date "$INPUT_RUN_DATE"); fi
+          python cloud_runner.py "${args[@]}"
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fg-evening-sales-run-${{ github.run_id }}
+          path: work/**/quality_report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload verified site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish verified snapshot
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  alert:
+    if: ${{ always() && (needs.build.result == 'failure' || needs.deploy.result == 'failure') }}
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create one visible failure alert
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reportDate = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Kolkata",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit"
+            }).format(new Date());
+            const title = `[FG BOT] Evening secondary sales refresh failed - ${reportDate}`;
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            if (!open.some(issue => issue.title === title)) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: `The current-date Channel Sales email or reconciliation gate did not pass. The previous verified bot remains live. Review ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              });
+            }

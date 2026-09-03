@@ -61,6 +61,19 @@ def _normal_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(value).strip().casefold()).strip("_")
 
 
+def _is_date_label(value: Any) -> bool:
+    text = str(value).strip()
+    year_first = bool(re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text))
+    return pd.notna(
+        pd.to_datetime(
+            text,
+            dayfirst=not year_first,
+            yearfirst=year_first,
+            errors="coerce",
+        )
+    )
+
+
 def _read_table(path: Path) -> tuple[pd.DataFrame, list[str], str]:
     if path.suffix.casefold() in {".xlsx", ".xlsm", ".xls"}:
         try:
@@ -76,7 +89,7 @@ def _read_table(path: Path) -> tuple[pd.DataFrame, list[str], str]:
             date_columns = [
                 column
                 for column in frame.columns
-                if pd.notna(pd.to_datetime(column, dayfirst=True, errors="coerce"))
+                if _is_date_label(column)
             ]
             if not date_columns:
                 raise ValueError("no date columns")
@@ -101,7 +114,7 @@ def _read_table(path: Path) -> tuple[pd.DataFrame, list[str], str]:
             date_columns = [
                 column
                 for column in frame.columns
-                if pd.notna(pd.to_datetime(column, dayfirst=True, errors="coerce"))
+                if _is_date_label(column)
             ]
             if not date_columns:
                 raise ValueError("no date columns")

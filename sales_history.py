@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,6 +66,22 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _parse_date_labels(values: list[str]) -> pd.DatetimeIndex:
+    parsed: list[pd.Timestamp] = []
+    for value in values:
+        text = str(value).strip()
+        year_first = bool(re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text))
+        parsed.append(
+            pd.to_datetime(
+                text,
+                dayfirst=not year_first,
+                yearfirst=year_first,
+                errors="coerce",
+            )
+        )
+    return pd.DatetimeIndex(parsed)
+
+
 def _read_wide(path: Path, measure: str) -> tuple[pd.DataFrame, dict[str, Any]]:
     wide = pd.read_csv(
         path,
@@ -79,7 +96,7 @@ def _read_wide(path: Path, measure: str) -> tuple[pd.DataFrame, dict[str, Any]]:
         raise ValueError(f"Historical sales file has too few columns: {path.name}")
     original_dimensions = list(wide.columns[:7])
     date_columns = list(wide.columns[7:])
-    parsed_dates = pd.to_datetime(date_columns, dayfirst=True, errors="coerce")
+    parsed_dates = _parse_date_labels(date_columns)
     invalid_dates = [date_columns[i] for i, value in enumerate(parsed_dates) if pd.isna(value)]
     if invalid_dates:
         raise ValueError(
@@ -110,9 +127,8 @@ def _read_wide(path: Path, measure: str) -> tuple[pd.DataFrame, dict[str, Any]]:
         var_name="order_date",
         value_name=measure,
     )
-    long["order_date"] = pd.to_datetime(
-        long["order_date"], dayfirst=True, errors="coerce"
-    ).dt.normalize()
+    date_lookup = dict(zip(date_columns, parsed_dates))
+    long["order_date"] = long["order_date"].map(date_lookup).dt.normalize()
     long[measure] = _numeric_nullable(long[measure])
     long = long.loc[long[measure].notna()].copy()
 

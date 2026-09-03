@@ -23,7 +23,7 @@ from secondary_sales import (
     build_secondary_sales,
 )
 from sales_history import read_manual_history
-from tableau_history_refresh import normalize_exports
+from tableau_history_refresh import _write_wide, normalize_exports
 
 
 class InventoryPipelineTests(unittest.TestCase):
@@ -336,6 +336,12 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(quality["value"]["subtotal_rows_ignored"], 2)
         self.assertEqual(float(quantity[date_columns].sum().sum()), 12.0)
         self.assertEqual(float(value[date_columns].sum().sum()), 1200.0)
+        quantity_output = self.root / "normalized quantity.csv"
+        value_output = self.root / "normalized value.csv"
+        _write_wide(quantity_output, quantity, date_columns)
+        _write_wide(value_output, value, date_columns)
+        history, _ = read_manual_history(quantity_output, value_output)
+        self.assertEqual(history["order_date"].max().date().isoformat(), "2026-08-13")
 
     def test_tableau_sparse_zero_measure_rows_are_reconciled(self) -> None:
         quantity_path = self.root / "EComm Overall sparse.csv"

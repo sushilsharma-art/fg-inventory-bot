@@ -16,7 +16,12 @@ Every answer can be copied, saved as an image, forwarded to WhatsApp, or used as
 
 The morning workflow in `.github/workflows/daily-refresh.yml` runs at 10:45 AM IST, with three 30-minute retries. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files, authenticates to Tableau Cloud with a Personal Access Token, downloads the approved `EComm Overall` quantity and `EComm Overall Sales` value crosstabs, reconciles them, refreshes secondary-sales history, rebuilds the encrypted WhatsApp-style bot, and publishes the verified snapshot. The evening workflow independently checks Anshul Bhatkar's dated `Channel Sales Tracker Dump` attachment at 5:40 PM IST, with 6:00 PM and 6:30 PM retries. Once the repository and secrets are configured, no computer needs to remain switched on.
 
-Required repository secret: `FG_BOT_PASSCODE`.
+Required private repository secret: `FG_BOT_PASSCODE`. It protects the encrypted
+configuration and history seed and must not be shared with bot users.
+
+Required shareable login secret: `FG_BOT_LOGIN_PASSCODE`. Give this passcode only
+to trusted inventory users. It may be changed without re-encrypting the private
+configuration; the next successful refresh rotates the live bot payload.
 
 Required Tableau repository secrets: `TABLEAU_PAT_NAME` and `TABLEAU_PAT_SECRET`.
 

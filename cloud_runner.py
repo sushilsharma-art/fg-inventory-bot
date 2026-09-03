@@ -111,6 +111,35 @@ def _passcode(args: argparse.Namespace) -> str:
     return value
 
 
+def _login_passcode(private_passcode: str) -> str:
+    """Return the shareable bot-login passcode without rotating private config keys."""
+    value = os.getenv("FG_BOT_LOGIN_PASSCODE", "").strip()
+    if not value:
+        return private_passcode
+    if len(value) < 8:
+        raise ValueError(
+            "FG_BOT_LOGIN_PASSCODE is too short. Use at least 8 characters."
+        )
+    return value
+
+
+def _decrypt_with_passcodes(envelope: dict, passcodes: list[str]) -> dict:
+    """Decrypt a payload with the active login key, then any rotation fallback."""
+    last_error: Exception | None = None
+    tried: set[str] = set()
+    for passcode in passcodes:
+        if not passcode or passcode in tried:
+            continue
+        tried.add(passcode)
+        try:
+            return decrypt_payload(envelope, passcode)
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise ValueError("No payload passcode was supplied.")
+
+
 def _default_previous_url() -> str | None:
     repository = os.getenv("GITHUB_REPOSITORY", "").strip()
     if "/" not in repository:
@@ -123,7 +152,7 @@ def _default_previous_url() -> str | None:
 
 def _load_previous(
     url: str | None,
-    passcode: str,
+    passcodes: list[str],
     target: Path,
 ) -> tuple[dict | None, bytes | None, str | None]:
     if not url:
@@ -131,7 +160,7 @@ def _load_previous(
             try:
                 blob = target.read_bytes()
                 envelope = json.loads(blob.decode("utf-8"))
-                payload = decrypt_payload(envelope, passcode)
+                payload = _decrypt_with_passcodes(envelope, passcodes)
                 return payload, blob, "Using the existing local payload as history."
             except Exception as exc:
                 return None, None, f"Existing local payload could not be reused: {exc}"
@@ -148,7 +177,7 @@ def _load_previous(
         response.raise_for_status()
         blob = response.content
         envelope = json.loads(blob.decode("utf-8"))
-        payload = decrypt_payload(envelope, passcode)
+        payload = _decrypt_with_passcodes(envelope, passcodes)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(blob)
         return payload, blob, None
@@ -211,11 +240,12 @@ def main() -> int:
         raise ValueError(
             "Use either --channel-sales-xlsx or the automated Tableau refresh, not both."
         )
-    passcode = _passcode(args)
+    private_passcode = _passcode(args)
+    login_passcode = _login_passcode(private_passcode)
     restored_config = restore_config(
         ROOT / "config" / "config_bundle.enc.json",
         args.master.parent,
-        passcode,
+        private_passcode,
     )
     if restored_config:
         print("Restored the encrypted facility-mapping configuration.")
@@ -224,7 +254,7 @@ def main() -> int:
     restored_seed = restore_history(
         ROOT / "data" / "history_seed.enc.json",
         args.sales_history_db,
-        passcode,
+        private_passcode,
     )
     if restored_seed:
         print("Restored the encrypted secondary-sales history seed.")
@@ -240,7 +270,7 @@ def main() -> int:
     deployed_path = args.site_dir / "data.enc.json"
     previous, previous_blob, previous_warning = _load_previous(
         previous_url,
-        passcode,
+        [login_passcode, private_passcode],
         deployed_path,
     )
     if previous_warning:
@@ -383,7 +413,7 @@ def main() -> int:
         raise ValueError("Payload date reconciliation failed.")
     if not payload["freshnessAvailable"]:
         raise ValueError("Freshness data is unavailable; publication blocked.")
-    envelope = encrypt_payload(payload, passcode)
+    envelope = encrypt_payload(payload, login_passcode)
     _atomic_json(deployed_path, envelope)
     blob = deployed_path.read_bytes()
     digest = hashlib.sha256(blob).hexdigest()

@@ -57,6 +57,7 @@ jobs:
       - name: Build and validate current snapshot
         env:
           FG_BOT_PASSCODE: ${{ secrets.FG_BOT_PASSCODE }}
+          FG_BOT_LOGIN_PASSCODE: ${{ secrets.FG_BOT_LOGIN_PASSCODE }}
           FG_BOT_DATA_URL: ${{ vars.FG_BOT_DATA_URL }}
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}

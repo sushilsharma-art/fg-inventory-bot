@@ -185,11 +185,14 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
             output[dimension] = ""
     output = output[CANONICAL_DIMENSIONS]
     # Tableau crosstabs can include visual subtotal rows for each channel. They
-    # have a channel label but no SKU and repeat values already represented by
-    # the SKU detail rows, so they must not enter SKU-grain reconciliation.
+    # have a channel label but neither SKU nor product name and repeat values
+    # already represented by detail rows.  A blank SKU with a real product name
+    # is legitimate unmapped-product detail and must remain in the totals.
     blank_sku = output["child_sku"].fillna("").astype(str).str.strip().eq("")
-    subtotal_rows_ignored = int(blank_sku.sum())
-    output = output.loc[~blank_sku].copy()
+    blank_product = output["product_name"].fillna("").astype(str).str.strip().eq("")
+    subtotal_mask = blank_sku & blank_product
+    subtotal_rows_ignored = int(subtotal_mask.sum())
+    output = output.loc[~subtotal_mask].copy()
     output["_entity_channel"] = _entity_key(output)
     if output["channel_name"].eq("").any():
         raise ValueError(f"Blank channel rows found in {path.name}")

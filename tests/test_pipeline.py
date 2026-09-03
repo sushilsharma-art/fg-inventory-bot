@@ -346,10 +346,11 @@ class InventoryPipelineTests(unittest.TestCase):
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
             writer.writerow(["", "", ""] + ["Date Level"] * len(dates))
             writer.writerow(["child_sku", "product_name", "channel_name"] + dates)
-            writer.writerow(["Grand Total", "Total", "Total", 52, 0])
+            writer.writerow(["Grand Total", "Total", "Total", 55, 0])
             for index in range(50):
                 writer.writerow([f"SKU{index}", f"Product {index}", "Amazon", 1, 0])
             writer.writerow(["QONLY", "Quantity only", "Amazon", 2, 0])
+            writer.writerow(["", "Unmapped product", "Amazon", 3, 0])
 
         with value_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -365,18 +366,20 @@ class InventoryPipelineTests(unittest.TestCase):
                 ]
                 + dates
             )
-            writer.writerow(["Grand Total"] + ["Total"] * 5 + [520, 0])
+            writer.writerow(["Grand Total"] + ["Total"] * 5 + [550, 0])
             for index in range(50):
                 writer.writerow(
                     [f"SKU{index}", f"Product {index}", "Sub", "Cat", "MM", "Amazon", 10, 0]
                 )
             writer.writerow(["VONLY", "Value only", "Sub", "Cat", "MM", "Amazon", 20, 0])
+            writer.writerow(["", "Unmapped product", "Sub", "Cat", "MM", "Amazon", 30, 0])
 
         quantity, value, date_columns, quality = normalize_exports(
             quantity_path, value_path
         )
-        self.assertEqual(len(quantity), 52)
-        self.assertEqual(len(value), 52)
+        self.assertEqual(len(quantity), 53)
+        self.assertEqual(len(value), 53)
+        self.assertEqual(int(quantity["child_sku"].eq("").sum()), 1)
         self.assertEqual(quality["quantity_only_rows_zero_filled"], 1)
         self.assertEqual(quality["value_only_rows_zero_filled"], 1)
         self.assertEqual(

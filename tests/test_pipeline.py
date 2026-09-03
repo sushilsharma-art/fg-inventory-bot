@@ -280,24 +280,25 @@ class InventoryPipelineTests(unittest.TestCase):
     def test_tableau_quantity_dimensions_are_restored_from_value_export(self) -> None:
         quantity_path = self.root / "EComm Overall.csv"
         value_path = self.root / "EComm Overall Sales.csv"
-        dates = ["01/08/2026", "02/08/2026"]
+        quantity_dates = ["2026-08-01 00:00:00", "2026-08-02 00:00:00", "2026-08-03 00:00:00"]
+        value_dates = ["01/08/2026", "02/08/2026"]
 
         with quantity_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-            writer.writerow(["", "", "", ""] + ["Date Level"] * len(dates))
+            writer.writerow(["", "", "", ""] + ["Date Level"] * len(quantity_dates))
             writer.writerow(
                 ["child_sku", "product_name", "channel_name", "product_name"]
-                + dates
+                + quantity_dates
             )
-            writer.writerow(["Grand Total", "Total", "Total", "Total", 5, 7])
-            writer.writerow(["", "", "Amazon", "", 2, 3])
-            writer.writerow(["", "", "WebApp", "", 3, 4])
-            writer.writerow(["SKU1", "One", "Amazon", "One", 2, 3])
-            writer.writerow(["SKU2", "Two", "WebApp", "Two", 3, 4])
+            writer.writerow(["Grand Total", "Total", "Total", "Total", 5, 7, 1])
+            writer.writerow(["", "", "Amazon", "", 2, 3, 1])
+            writer.writerow(["", "", "WebApp", "", 3, 4, 0])
+            writer.writerow(["SKU1", "One", "Amazon", "One", 2, 3, 1])
+            writer.writerow(["SKU2", "Two", "WebApp", "Two", 3, 4, 0])
 
         with value_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-            writer.writerow([""] * 7 + ["Date Level"] * len(dates))
+            writer.writerow([""] * 7 + ["Date Level"] * len(value_dates))
             writer.writerow(
                 [
                     "child_sku",
@@ -308,7 +309,7 @@ class InventoryPipelineTests(unittest.TestCase):
                     "channel_name",
                     "product_name",
                 ]
-                + dates
+                + value_dates
             )
             writer.writerow(["Grand Total"] + ["Total"] * 6 + [500, 700])
             writer.writerow(["", "", "", "", "", "Amazon", "", 200, 300])
@@ -323,14 +324,16 @@ class InventoryPipelineTests(unittest.TestCase):
         quantity, value, date_columns, quality = normalize_exports(
             quantity_path, value_path
         )
-        self.assertEqual(date_columns, dates)
+        self.assertEqual(date_columns, ["2026-08-01", "2026-08-02"])
         self.assertTrue(quality["format_match"])
+        self.assertEqual(quality["quantity_only_dates_ignored"], ["2026-08-03"])
+        self.assertEqual(quality["value_only_dates_ignored"], [])
         self.assertEqual(quantity.loc[0, "sub_category"], "Sub1")
         self.assertEqual(quantity.loc[0, "brand"], "MM")
         self.assertEqual(quality["quantity"]["subtotal_rows_ignored"], 2)
         self.assertEqual(quality["value"]["subtotal_rows_ignored"], 2)
-        self.assertEqual(float(quantity[dates].sum().sum()), 12.0)
-        self.assertEqual(float(value[dates].sum().sum()), 1200.0)
+        self.assertEqual(float(quantity[date_columns].sum().sum()), 12.0)
+        self.assertEqual(float(value[date_columns].sum().sum()), 1200.0)
 
 
 if __name__ == "__main__":

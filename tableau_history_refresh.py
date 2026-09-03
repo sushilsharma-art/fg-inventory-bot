@@ -146,8 +146,23 @@ def _entity_key(frame: pd.DataFrame) -> pd.Series:
     return entity + "|" + channel
 
 
+def _calendar_date_label(value: Any) -> str:
+    text = str(value).strip()
+    year_first = bool(re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text))
+    parsed = pd.to_datetime(
+        text,
+        dayfirst=not year_first,
+        yearfirst=year_first,
+        errors="raise",
+    )
+    return parsed.date().isoformat()
+
+
 def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[str, Any]]:
     raw, date_columns, encoding = _read_table(path)
+    canonical_dates = [_calendar_date_label(column) for column in date_columns]
+    if len(canonical_dates) != len(set(canonical_dates)):
+        raise ValueError(f"Duplicate calendar-date columns found in {path.name}")
     dimensions = [column for column in raw.columns if column not in date_columns]
     required = {"child_sku", "product_name", "channel_name"}
     mapping: dict[str, str] = {}
@@ -185,29 +200,30 @@ def _extract(path: Path, measure: str) -> tuple[pd.DataFrame, list[str], dict[st
             f"Duplicate SKU-channel rows found in {path.name}: "
             + sample.to_dict("records").__repr__()
         )
-    for column in date_columns:
-        output[column] = _nullable_numbers(detail[column])
+    for source_column, canonical_date in zip(date_columns, canonical_dates):
+        output[canonical_date] = _nullable_numbers(detail[source_column])
 
-    detail_totals = output[date_columns].sum(axis=0)
+    detail_totals = output[canonical_dates].sum(axis=0)
     reported = _numbers(reported_row[date_columns])
+    reported.index = canonical_dates
     difference = (detail_totals - reported).abs()
     quality = {
         "file": path.name,
         "encoding": encoding,
         "detail_rows": int(len(output)),
         "subtotal_rows_ignored": subtotal_rows_ignored,
-        "date_min": pd.to_datetime(date_columns, dayfirst=True).min().date().isoformat(),
-        "date_max": pd.to_datetime(date_columns, dayfirst=True).max().date().isoformat(),
-        "distinct_days": len(date_columns),
+        "date_min": min(canonical_dates),
+        "date_max": max(canonical_dates),
+        "distinct_days": len(canonical_dates),
         "channels": int(output["channel_name"].nunique()),
         "skus": int(output["child_sku"].nunique()),
         "available_dimensions": sorted(mapping),
         "daily_total_mismatch_days": int(difference.gt(0.01).sum()),
         "max_abs_daily_total_difference": float(difference.max()),
-        "negative_cells": int(output[date_columns].lt(0).sum().sum()),
+        "negative_cells": int(output[canonical_dates].lt(0).sum().sum()),
         "measure": measure,
     }
-    return output, date_columns, quality
+    return output, canonical_dates, quality
 
 
 def normalize_exports(
@@ -216,8 +232,23 @@ def normalize_exports(
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict[str, Any]]:
     quantity, quantity_dates, quantity_quality = _extract(quantity_path, "units")
     value, value_dates, value_quality = _extract(value_path, "sales_value")
-    if quantity_dates != value_dates:
-        raise ValueError("Quantity and value exports do not contain the same date columns")
+    quantity_date_set = set(quantity_dates)
+    value_date_set = set(value_dates)
+    common_dates = sorted(quantity_date_set & value_date_set)
+    quantity_only_dates = sorted(quantity_date_set - value_date_set)
+    value_only_dates = sorted(value_date_set - quantity_date_set)
+    if not common_dates:
+        raise ValueError(
+            "Quantity and value exports have no common calendar dates: "
+            f"quantity {min(quantity_dates)}..{max(quantity_dates)}, "
+            f"value {min(value_dates)}..{max(value_dates)}"
+        )
+    overlap_ratio = len(common_dates) / len(quantity_date_set | value_date_set)
+    if overlap_ratio < 0.5:
+        raise ValueError(
+            "Quantity and value exports have insufficient calendar-date overlap: "
+            f"quantity-only={quantity_only_dates[:5]}, value-only={value_only_dates[:5]}"
+        )
     missing_value_dimensions = [
         dimension
         for dimension in CANONICAL_DIMENSIONS
@@ -240,8 +271,8 @@ def normalize_exports(
         )
 
     metadata = value[["_entity_channel", *CANONICAL_DIMENSIONS]].copy()
-    quantity_values = quantity[["_entity_channel", *quantity_dates]].copy()
-    value_values = value[["_entity_channel", *value_dates]].copy()
+    quantity_values = quantity[["_entity_channel", *common_dates]].copy()
+    value_values = value[["_entity_channel", *common_dates]].copy()
     canonical_quantity = metadata.merge(
         quantity_values,
         on="_entity_channel",
@@ -263,7 +294,7 @@ def normalize_exports(
         ["channel_name", "child_sku", "product_name"]
     ).reset_index(drop=True)
 
-    parsed_dates = pd.to_datetime(quantity_dates, dayfirst=True)
+    parsed_dates = pd.to_datetime(common_dates)
     quality = {
         "format_match": True,
         "normalization": (
@@ -273,13 +304,16 @@ def normalize_exports(
         "quantity": quantity_quality,
         "value": value_quality,
         "matched_rows": int(len(canonical_quantity)),
+        "quantity_only_dates_ignored": quantity_only_dates,
+        "value_only_dates_ignored": value_only_dates,
+        "calendar_date_overlap_ratio": round(overlap_ratio, 6),
         "date_min": parsed_dates.min().date().isoformat(),
         "date_max": parsed_dates.max().date().isoformat(),
-        "distinct_days": int(len(quantity_dates)),
+        "distinct_days": int(len(common_dates)),
         "channels": int(canonical_quantity["channel_name"].nunique()),
         "skus": int(canonical_quantity["child_sku"].nunique()),
     }
-    return canonical_quantity, canonical_value, quantity_dates, quality
+    return canonical_quantity, canonical_value, common_dates, quality
 
 
 def _format_number(value: Any) -> str:

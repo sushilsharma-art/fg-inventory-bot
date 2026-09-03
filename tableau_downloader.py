@@ -162,6 +162,12 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
 
         output_dir.mkdir(parents=True, exist_ok=True)
         downloaded: dict[str, Path] = {}
+        value_selector_field = os.getenv(
+            "TABLEAU_VALUE_SELECTOR_FIELD", "Trend Selector"
+        ).strip()
+        value_selector_value = os.getenv(
+            "TABLEAU_VALUE_SELECTOR_VALUE", "Child Sales"
+        ).strip()
         for key, view, filename in (
             ("quantity", quantity_view, "EComm Overall.xlsx"),
             ("value", value_view, "EComm Overall Sales.xlsx"),
@@ -175,9 +181,17 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
             ) as handle:
                 staged = Path(handle.name)
             try:
+                query_params: dict[str, object] = {"maxAge": 1}
+                if key == "value":
+                    # This workbook is saved with Average Selling Price as the
+                    # default.  Force the value crosstab to Child Sales.  The
+                    # vf_ form is the REST view-filter syntax; the plain form
+                    # preserves Tableau parameter-control compatibility.
+                    query_params[f"vf_{value_selector_field}"] = value_selector_value
+                    query_params[value_selector_field] = value_selector_value
                 response = session.get(
                     f"{server}/api/{api_version}/sites/{site_id}/views/{view.id}/crosstab/excel",
-                    params={"maxAge": 1},
+                    params=query_params,
                     timeout=180,
                 )
                 response.raise_for_status()
@@ -195,6 +209,8 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
             "workbook": workbook_name,
             "quantity_view": quantity_view.name,
             "value_view": value_view.name,
+            "value_selector_field": value_selector_field,
+            "value_selector_value": value_selector_value,
             "site": site,
         }
     finally:

@@ -337,6 +337,57 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(float(quantity[date_columns].sum().sum()), 12.0)
         self.assertEqual(float(value[date_columns].sum().sum()), 1200.0)
 
+    def test_tableau_sparse_zero_measure_rows_are_reconciled(self) -> None:
+        quantity_path = self.root / "EComm Overall sparse.csv"
+        value_path = self.root / "EComm Overall Sales sparse.csv"
+        dates = ["01/08/2026", "02/08/2026"]
+
+        with quantity_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow(["", "", ""] + ["Date Level"] * len(dates))
+            writer.writerow(["child_sku", "product_name", "channel_name"] + dates)
+            writer.writerow(["Grand Total", "Total", "Total", 52, 0])
+            for index in range(50):
+                writer.writerow([f"SKU{index}", f"Product {index}", "Amazon", 1, 0])
+            writer.writerow(["QONLY", "Quantity only", "Amazon", 2, 0])
+
+        with value_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow([""] * 6 + ["Date Level"] * len(dates))
+            writer.writerow(
+                [
+                    "child_sku",
+                    "product_name",
+                    "SubCategory_PM",
+                    "Category_PM",
+                    "brand",
+                    "channel_name",
+                ]
+                + dates
+            )
+            writer.writerow(["Grand Total"] + ["Total"] * 5 + [520, 0])
+            for index in range(50):
+                writer.writerow(
+                    [f"SKU{index}", f"Product {index}", "Sub", "Cat", "MM", "Amazon", 10, 0]
+                )
+            writer.writerow(["VONLY", "Value only", "Sub", "Cat", "MM", "Amazon", 20, 0])
+
+        quantity, value, date_columns, quality = normalize_exports(
+            quantity_path, value_path
+        )
+        self.assertEqual(len(quantity), 52)
+        self.assertEqual(len(value), 52)
+        self.assertEqual(quality["quantity_only_rows_zero_filled"], 1)
+        self.assertEqual(quality["value_only_rows_zero_filled"], 1)
+        self.assertEqual(
+            float(quantity.loc[quantity["child_sku"].eq("VONLY"), date_columns].sum().sum()),
+            0.0,
+        )
+        self.assertEqual(
+            float(value.loc[value["child_sku"].eq("QONLY"), date_columns].sum().sum()),
+            0.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

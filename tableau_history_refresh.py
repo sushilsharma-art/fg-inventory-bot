@@ -282,27 +282,64 @@ def normalize_exports(
     value_keys = set(value["_entity_channel"])
     quantity_only = sorted(quantity_keys - value_keys)
     value_only = sorted(value_keys - quantity_keys)
-    if quantity_only or value_only:
+    union_keys = quantity_keys | value_keys
+    sparse_key_count = len(quantity_only) + len(value_only)
+    sparse_key_ratio = sparse_key_count / max(len(union_keys), 1)
+    if sparse_key_count > 100 or sparse_key_ratio > 0.05:
         raise ValueError(
-            "Quantity and value exports do not reconcile at SKU-channel grain: "
-            f"{len(quantity_only)} quantity-only / {len(value_only)} value-only"
+            "Quantity and value exports have excessive SKU-channel scope mismatch: "
+            f"{len(quantity_only)} quantity-only / {len(value_only)} value-only "
+            f"({sparse_key_ratio:.2%} of {len(union_keys)} union rows)"
         )
 
-    metadata = value[["_entity_channel", *CANONICAL_DIMENSIONS]].copy()
+    # Tableau suppresses zero-measure rows independently on the quantity and
+    # value worksheets.  Keep their small reconciled union and represent a
+    # row omitted by one measure as zero for that measure.  Prefer the richer
+    # value metadata, falling back to the quantity row for quantity-only keys.
+    value_metadata = value[["_entity_channel", *CANONICAL_DIMENSIONS]].copy()
+    quantity_metadata = quantity[["_entity_channel", *CANONICAL_DIMENSIONS]].copy()
+    metadata = pd.concat(
+        [value_metadata, quantity_metadata], ignore_index=True
+    ).drop_duplicates("_entity_channel", keep="first")
+
+    value_sku_metadata = value[["child_sku", *CANONICAL_DIMENSIONS[1:-1]]].copy()
+    value_sku_metadata["_sku_key"] = (
+        value_sku_metadata["child_sku"].fillna("").astype(str).str.strip().str.casefold()
+    )
+    value_sku_metadata = value_sku_metadata.drop_duplicates("_sku_key", keep="first")
+    metadata["_sku_key"] = (
+        metadata["child_sku"].fillna("").astype(str).str.strip().str.casefold()
+    )
+    metadata = metadata.merge(
+        value_sku_metadata.drop(columns="child_sku"),
+        on="_sku_key",
+        how="left",
+        validate="many_to_one",
+        suffixes=("", "_from_value_sku"),
+    )
+    for dimension in CANONICAL_DIMENSIONS[1:-1]:
+        fallback = f"{dimension}_from_value_sku"
+        blank = metadata[dimension].fillna("").astype(str).str.strip().eq("")
+        metadata.loc[blank, dimension] = metadata.loc[blank, fallback]
+        metadata.drop(columns=fallback, inplace=True)
+    metadata.drop(columns="_sku_key", inplace=True)
+
     quantity_values = quantity[["_entity_channel", *common_dates]].copy()
     value_values = value[["_entity_channel", *common_dates]].copy()
     canonical_quantity = metadata.merge(
         quantity_values,
         on="_entity_channel",
-        how="inner",
+        how="left",
         validate="one_to_one",
     )
     canonical_value = metadata.merge(
         value_values,
         on="_entity_channel",
-        how="inner",
+        how="left",
         validate="one_to_one",
     )
+    canonical_quantity[common_dates] = canonical_quantity[common_dates].fillna(0.0)
+    canonical_value[common_dates] = canonical_value[common_dates].fillna(0.0)
     canonical_quantity.drop(columns="_entity_channel", inplace=True)
     canonical_value.drop(columns="_entity_channel", inplace=True)
     canonical_quantity = canonical_quantity.sort_values(
@@ -322,6 +359,10 @@ def normalize_exports(
         "quantity": quantity_quality,
         "value": value_quality,
         "matched_rows": int(len(canonical_quantity)),
+        "exact_matched_rows": int(len(quantity_keys & value_keys)),
+        "quantity_only_rows_zero_filled": int(len(quantity_only)),
+        "value_only_rows_zero_filled": int(len(value_only)),
+        "sparse_key_ratio": round(sparse_key_ratio, 6),
         "quantity_only_dates_ignored": quantity_only_dates,
         "value_only_dates_ignored": value_only_dates,
         "older_quantity_dates_ignored": older_quantity_dates_ignored,

@@ -77,16 +77,6 @@ NUMERIC_SOURCE_COLUMNS = [
     "Last 7 days Sales",
 ]
 
-# Newly opened Inamo dark stores may appear in the daily export before the
-# encrypted facility master is republished.  Keep this narrow allow-list so
-# known launches do not block the current day, while every other unknown
-# facility still fails the publication gate.
-KNOWN_FACILITY_DEFAULTS = (
-    ("Inamo_Hulimavu", "Dark Store", "Non 3PL", "No", "Yes"),
-    ("Inamo_LB_Nagar", "Dark Store", "Non 3PL", "No", "Yes"),
-    ("Inamo_Kachiguda", "Dark Store", "Non 3PL", "No", "Yes"),
-)
-
 ROUND_COLUMNS = [
     "DRR without DS",
     "DOI without DS",
@@ -167,21 +157,6 @@ def load_location_master(path: Path) -> pd.DataFrame:
             ],
             ignore_index=True,
         )
-    known_defaults = pd.DataFrame(
-        KNOWN_FACILITY_DEFAULTS,
-        columns=[
-            "Depot Name",
-            "Location Name",
-            "Location type",
-            "check 1",
-            "Inventory Check",
-        ],
-    )
-    known_defaults = known_defaults.loc[
-        ~known_defaults["Depot Name"].isin(master["Depot Name"])
-    ]
-    if not known_defaults.empty:
-        master = pd.concat([master, known_defaults], ignore_index=True)
     required = {
         "Depot Name",
         "Location Name",
@@ -257,6 +232,15 @@ def build_inventory_frame(
         "Inventory Check",
     ]:
         frame[column] = _clean_text(frame[column])
+
+    # Every Inamo facility is a Dark Store by business rule. Apply the rule
+    # directly to the daily source so a newly launched Inamo depot cannot stop
+    # the refresh while waiting for the encrypted master to be republished.
+    inamo_rows = frame["Depot Name"].str.casefold().str.startswith("inamo_")
+    frame.loc[inamo_rows, "Location Name"] = "Dark Store"
+    frame.loc[inamo_rows, "Location type"] = "Non 3PL"
+    frame.loc[inamo_rows, "check 1"] = "No"
+    frame.loc[inamo_rows, "Inventory Check"] = "Yes"
 
     unmapped_rows = frame["Location Name"].eq("")
     if unmapped_rows.any():
@@ -467,6 +451,8 @@ def build_freshness(
         & _clean_text(source["Inventory Allocation"]).str.casefold().eq("true")
     ].copy()
     eligible["Mapped Location"] = eligible["Facility"].map(master_location).fillna("")
+    inamo_rows = eligible["Facility"].str.casefold().str.startswith("inamo_")
+    eligible.loc[inamo_rows, "Mapped Location"] = "Dark Store"
     unmapped = eligible.loc[eligible["Mapped Location"].eq(""), "Facility"]
     if not unmapped.empty:
         counts = unmapped.value_counts()

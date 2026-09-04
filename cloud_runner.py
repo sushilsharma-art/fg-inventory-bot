@@ -319,6 +319,7 @@ def main() -> int:
         )
 
     tableau_quality = None
+    tableau_warning = None
     if args.refresh_tableau or args.require_tableau:
         try:
             exports = download_tableau_exports(dated_work / "tableau_downloads")
@@ -340,6 +341,7 @@ def main() -> int:
                 "value_view": exports["value_view"],
             }
         except Exception as exc:
+            tableau_warning = str(exc)
             if args.require_tableau:
                 raise ValueError(f"Required Tableau refresh failed: {exc}") from exc
             print(f"WARNING: Tableau refresh failed; preserving prior Secondary metrics: {exc}")
@@ -375,8 +377,12 @@ def main() -> int:
             "source_file": previous_secondary.get("sourceFile"),
             "data_through": previous_secondary.get("dataThrough"),
             "reason": (
-                "No current-date Channel Sales attachment was available; "
-                "the latest reviewed Secondary Sales metrics were preserved."
+                (
+                    f"Tableau refresh was unavailable ({tableau_warning}); "
+                    if tableau_warning
+                    else "No current-date Channel Sales attachment was available; "
+                )
+                + "the latest reviewed Secondary Sales metrics were preserved."
             ),
         }
     workbook_path = dated_work / f"FG_Inventory_Daily_{run_date:%d%m%Y}.xlsx"
@@ -398,6 +404,12 @@ def main() -> int:
         quality["secondary_sales_history_seed"] = history_seed_quality
     if tableau_quality:
         quality["tableau_refresh"] = tableau_quality
+    elif tableau_warning:
+        quality["tableau_refresh"] = {
+            "status": "carried_forward",
+            "warning": tableau_warning,
+            "data_through": previous_secondary.get("dataThrough"),
+        }
     previous_history = previous.get("history") if previous else None
     payload = build_payload(
         frame,

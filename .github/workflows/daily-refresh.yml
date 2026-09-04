@@ -13,11 +13,13 @@ on:
         default: false
         type: boolean
   schedule:
-    # GitHub schedules use UTC: 10:45, 11:15, 11:45 and 12:15 IST.
+    # GitHub schedules use UTC. Staggered, non-round minutes reduce scheduler
+    # congestion; every run exits quickly once today's verified snapshot exists.
     - cron: "15 5 * * *"
-    - cron: "45 5 * * *"
-    - cron: "15 6 * * *"
-    - cron: "45 6 * * *"
+    - cron: "37 5 * * *"
+    - cron: "59 5 * * *"
+    - cron: "21 6 * * *"
+    - cron: "43 6 * * *"
 
 concurrency:
   group: fg-inventory-production
@@ -73,7 +75,10 @@ jobs:
           INPUT_FORCE: ${{ inputs.force_rebuild }}
         shell: bash
         run: |
-          args=(--refresh-tableau --require-tableau)
+          # Inventory publication requires all three current-date operational
+          # sources. Tableau is refreshed independently; if it is late, keep
+          # the last reviewed Secondary metrics and expose their exact through date.
+          args=(--refresh-tableau)
           if [[ -n "$INPUT_RUN_DATE" ]]; then args+=(--date "$INPUT_RUN_DATE"); fi
           if [[ "$INPUT_FORCE" == "true" ]]; then args+=(--force); fi
           python cloud_runner.py "${args[@]}"

@@ -185,6 +185,25 @@ class InventoryPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unmapped facilities"):
             build_inventory_frame(path, self.master, min_rows=1, min_skus=1)
 
+    def test_new_inamo_facilities_use_reviewed_dark_store_defaults(self) -> None:
+        source = pd.read_csv(self._fg_source())
+        source.loc[0, "Depot Name"] = "Inamo_Hulimavu"
+        path = self.root / "FG INVENTORY REPORT_07082026102316.csv"
+        source.to_csv(path, index=False)
+
+        frame, quality = build_inventory_frame(
+            path,
+            self.master,
+            min_rows=1,
+            min_skus=1,
+        )
+        mapped = frame.loc[frame["Depot Name"].eq("Inamo_Hulimavu")].iloc[0]
+        self.assertEqual(mapped["Location Name"], "Dark Store")
+        self.assertEqual(mapped["Location type"], "Non 3PL")
+        self.assertEqual(mapped["check 1"], "No")
+        self.assertEqual(mapped["Inventory Check"], "Yes")
+        self.assertEqual(quality["unmapped_facilities"], 0)
+
     def test_channel_demand_fc_is_a_separate_b2b_mumbai_location(self) -> None:
         source = pd.read_csv(self._fg_source())
         source.loc[len(source)] = [

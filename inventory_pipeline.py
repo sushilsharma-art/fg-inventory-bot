@@ -77,6 +77,16 @@ NUMERIC_SOURCE_COLUMNS = [
     "Last 7 days Sales",
 ]
 
+# Newly opened Inamo dark stores may appear in the daily export before the
+# encrypted facility master is republished.  Keep this narrow allow-list so
+# known launches do not block the current day, while every other unknown
+# facility still fails the publication gate.
+KNOWN_FACILITY_DEFAULTS = (
+    ("Inamo_Hulimavu", "Dark Store", "Non 3PL", "No", "Yes"),
+    ("Inamo_LB_Nagar", "Dark Store", "Non 3PL", "No", "Yes"),
+    ("Inamo_Kachiguda", "Dark Store", "Non 3PL", "No", "Yes"),
+)
+
 ROUND_COLUMNS = [
     "DRR without DS",
     "DOI without DS",
@@ -157,6 +167,21 @@ def load_location_master(path: Path) -> pd.DataFrame:
             ],
             ignore_index=True,
         )
+    known_defaults = pd.DataFrame(
+        KNOWN_FACILITY_DEFAULTS,
+        columns=[
+            "Depot Name",
+            "Location Name",
+            "Location type",
+            "check 1",
+            "Inventory Check",
+        ],
+    )
+    known_defaults = known_defaults.loc[
+        ~known_defaults["Depot Name"].isin(master["Depot Name"])
+    ]
+    if not known_defaults.empty:
+        master = pd.concat([master, known_defaults], ignore_index=True)
     required = {
         "Depot Name",
         "Location Name",

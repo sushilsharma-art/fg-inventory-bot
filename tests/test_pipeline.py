@@ -185,9 +185,10 @@ class InventoryPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unmapped facilities"):
             build_inventory_frame(path, self.master, min_rows=1, min_skus=1)
 
-    def test_any_inamo_facility_uses_dark_store_rule(self) -> None:
+    def test_new_inamo_and_er_facilities_use_dark_store_family_rule(self) -> None:
         source = pd.read_csv(self._fg_source())
         source.loc[0, "Depot Name"] = "Inamo_Future_Launch"
+        source.loc[1, "Depot Name"] = "ER_Future_Launch"
         path = self.root / "FG INVENTORY REPORT_07082026102316.csv"
         source.to_csv(path, index=False)
 
@@ -197,15 +198,17 @@ class InventoryPipelineTests(unittest.TestCase):
             min_rows=1,
             min_skus=1,
         )
-        mapped = frame.loc[frame["Depot Name"].eq("Inamo_Future_Launch")].iloc[0]
-        self.assertEqual(mapped["Location Name"], "Dark Store")
-        self.assertEqual(mapped["Location type"], "Non 3PL")
-        self.assertEqual(mapped["check 1"], "No")
-        self.assertEqual(mapped["Inventory Check"], "Yes")
+        for facility in ("Inamo_Future_Launch", "ER_Future_Launch"):
+            mapped = frame.loc[frame["Depot Name"].eq(facility)].iloc[0]
+            self.assertEqual(mapped["Location Name"], "Dark Store")
+            self.assertEqual(mapped["Location type"], "Non 3PL")
+            self.assertEqual(mapped["check 1"], "No")
+            self.assertEqual(mapped["Inventory Check"], "Yes")
         self.assertEqual(quality["unmapped_facilities"], 0)
 
         shelf = pd.read_csv(self._shelf_source())
         shelf.loc[0, "Facility"] = "Inamo_Future_Launch"
+        shelf.loc[1, "Facility"] = "ER_Future_Launch"
         shelf_path = self.root / "Shelfwise Inventory_07082026102243.csv"
         shelf.to_csv(shelf_path, index=False)
         freshness, shelf_quality = build_freshness(

@@ -115,6 +115,12 @@ def _yes(series: pd.Series) -> pd.Series:
     return _clean_text(series).str.casefold().eq("yes")
 
 
+def _is_auto_dark_store(series: pd.Series) -> pd.Series:
+    """Recognize facility families that are always operated as Dark Stores."""
+    names = _clean_text(series).str.casefold()
+    return names.str.startswith("inamo_") | names.str.startswith("er_")
+
+
 def _number(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -233,14 +239,14 @@ def build_inventory_frame(
     ]:
         frame[column] = _clean_text(frame[column])
 
-    # Every Inamo facility is a Dark Store by business rule. Apply the rule
-    # directly to the daily source so a newly launched Inamo depot cannot stop
-    # the refresh while waiting for the encrypted master to be republished.
-    inamo_rows = frame["Depot Name"].str.casefold().str.startswith("inamo_")
-    frame.loc[inamo_rows, "Location Name"] = "Dark Store"
-    frame.loc[inamo_rows, "Location type"] = "Non 3PL"
-    frame.loc[inamo_rows, "check 1"] = "No"
-    frame.loc[inamo_rows, "Inventory Check"] = "Yes"
+    # Inamo_* and ER_* are Dark Store facility families. Apply this directly to
+    # each daily source so a newly launched depot cannot stop the refresh while
+    # waiting for the encrypted facility master to be republished.
+    auto_dark_store = _is_auto_dark_store(frame["Depot Name"])
+    frame.loc[auto_dark_store, "Location Name"] = "Dark Store"
+    frame.loc[auto_dark_store, "Location type"] = "Non 3PL"
+    frame.loc[auto_dark_store, "check 1"] = "No"
+    frame.loc[auto_dark_store, "Inventory Check"] = "Yes"
 
     unmapped_rows = frame["Location Name"].eq("")
     if unmapped_rows.any():
@@ -451,8 +457,8 @@ def build_freshness(
         & _clean_text(source["Inventory Allocation"]).str.casefold().eq("true")
     ].copy()
     eligible["Mapped Location"] = eligible["Facility"].map(master_location).fillna("")
-    inamo_rows = eligible["Facility"].str.casefold().str.startswith("inamo_")
-    eligible.loc[inamo_rows, "Mapped Location"] = "Dark Store"
+    auto_dark_store = _is_auto_dark_store(eligible["Facility"])
+    eligible.loc[auto_dark_store, "Mapped Location"] = "Dark Store"
     unmapped = eligible.loc[eligible["Mapped Location"].eq(""), "Facility"]
     if not unmapped.empty:
         counts = unmapped.value_counts()

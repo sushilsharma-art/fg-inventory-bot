@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      refresh_tableau_source:
+        description: Run Tableau workbook extract refresh before rebuilding
+        required: false
+        default: false
+        type: boolean
   schedule:
     # GitHub schedules use UTC. Staggered, non-round minutes reduce scheduler
     # congestion; every run exits quickly once today's verified snapshot exists.
@@ -55,6 +60,16 @@ jobs:
           key: fg-secondary-history-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             fg-secondary-history-${{ runner.os }}-
+
+      - name: Refresh Tableau workbook now
+        if: ${{ inputs.refresh_tableau_source == true }}
+        env:
+          TABLEAU_PAT_NAME: ${{ secrets.TABLEAU_PAT_NAME }}
+          TABLEAU_PAT_SECRET: ${{ secrets.TABLEAU_PAT_SECRET }}
+          TABLEAU_SERVER_URL: ${{ vars.TABLEAU_SERVER_URL }}
+          TABLEAU_SITE_CONTENT_URL: ${{ vars.TABLEAU_SITE_CONTENT_URL }}
+          TABLEAU_WORKBOOK_CONTENT_URL: ${{ vars.TABLEAU_WORKBOOK_CONTENT_URL }}
+        run: python tableau_downloader.py --refresh-workbook-now --wait-timeout 900
 
       - name: Build and validate current snapshot
         env:

@@ -11,6 +11,7 @@ import argparse
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -305,10 +306,125 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
         session.close()
 
 
+def refresh_tableau_workbook_now(*, wait_timeout: int = 900) -> dict[str, object]:
+    """Start an on-demand workbook extract refresh and wait for its job."""
+    server = (os.getenv("TABLEAU_SERVER_URL") or DEFAULT_SERVER).strip().rstrip("/")
+    site = (os.getenv("TABLEAU_SITE_CONTENT_URL") or DEFAULT_SITE).strip()
+    workbook_name = (
+        os.getenv("TABLEAU_WORKBOOK_CONTENT_URL") or DEFAULT_WORKBOOK
+    ).strip()
+    api_version = (os.getenv("TABLEAU_API_VERSION") or DEFAULT_API_VERSION).strip()
+    pat_name = _required_env("TABLEAU_PAT_NAME")
+    pat_secret = _required_env("TABLEAU_PAT_SECRET")
+
+    session = requests.Session()
+    session.headers.update({"Accept": "application/xml", "User-Agent": "fg-inventory-bot/1.0"})
+    token = ""
+    site_id = ""
+    try:
+        signin = session.post(
+            f"{server}/api/{api_version}/auth/signin",
+            json={
+                "credentials": {
+                    "personalAccessTokenName": pat_name,
+                    "personalAccessTokenSecret": pat_secret,
+                    "site": {"contentUrl": site},
+                }
+            },
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=45,
+        )
+        signin.raise_for_status()
+        credentials = signin.json()["credentials"]
+        token = str(credentials["token"])
+        site_id = str(credentials["site"]["id"])
+        session.headers.update({"X-Tableau-Auth": token})
+
+        workbook_response = session.get(
+            f"{server}/api/{api_version}/sites/{site_id}/workbooks",
+            params={"pageSize": 1000},
+            timeout=60,
+        )
+        workbook_root = _xml(workbook_response)
+        workbooks = list(workbook_root.findall(f".//{{{XML_NAMESPACE}}}workbook"))
+        workbook_id = _select_workbook(workbooks, workbook_name)
+
+        refresh_response = session.post(
+            f"{server}/api/{api_version}/sites/{site_id}/workbooks/{workbook_id}/refresh",
+            data="<tsRequest></tsRequest>",
+            headers={"Content-Type": "application/xml"},
+            timeout=60,
+        )
+        refresh_root = _xml(refresh_response)
+        job = refresh_root.find(f".//{{{XML_NAMESPACE}}}job")
+        if job is None or not job.get("id"):
+            raise ValueError("Tableau accepted the refresh but did not return a job ID.")
+        job_id = str(job.get("id"))
+        created_at = str(job.get("createdAt", ""))
+
+        deadline = time.monotonic() + wait_timeout
+        while time.monotonic() < deadline:
+            job_response = session.get(
+                f"{server}/api/{api_version}/sites/{site_id}/jobs/{job_id}",
+                timeout=60,
+            )
+            job_root = _xml(job_response)
+            current = job_root.find(f".//{{{XML_NAMESPACE}}}job")
+            if current is None:
+                raise ValueError("Tableau job status response did not contain the refresh job.")
+            finish_code = current.get("finishCode")
+            if finish_code is not None:
+                completed_at = str(current.get("completedAt", ""))
+                notes = [
+                    str(item.get("text", "")).strip()
+                    for item in current.findall(f".//{{{XML_NAMESPACE}}}statusNote")
+                    if str(item.get("text", "")).strip()
+                ]
+                if finish_code not in {"0", "3"}:
+                    detail = "; ".join(notes[:3]) or "no status detail supplied"
+                    raise RuntimeError(
+                        f"Tableau workbook refresh failed with finish code {finish_code}: {detail}"
+                    )
+                return {
+                    "status": "success",
+                    "workbook": workbook_name,
+                    "created_at": created_at,
+                    "completed_at": completed_at,
+                    "finish_code": finish_code,
+                }
+            time.sleep(10)
+        raise TimeoutError(
+            f"Tableau workbook refresh did not finish within {wait_timeout} seconds."
+        )
+    finally:
+        if token and site_id:
+            try:
+                session.post(
+                    f"{server}/api/{api_version}/auth/signout",
+                    timeout=20,
+                )
+            except requests.RequestException:
+                pass
+        session.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--refresh-workbook-now", action="store_true")
+    parser.add_argument("--wait-timeout", type=int, default=900)
     args = parser.parse_args()
+    if args.refresh_workbook_now:
+        result = refresh_tableau_workbook_now(wait_timeout=args.wait_timeout)
+        print(
+            "Tableau workbook refresh completed: "
+            f"workbook={result['workbook']}; "
+            f"created_at={result['created_at']}; "
+            f"completed_at={result['completed_at']}"
+        )
+        return 0
+    if args.output_dir is None:
+        parser.error("--output-dir is required unless --refresh-workbook-now is used")
     result = download_tableau_exports(args.output_dir.resolve())
     print(f"Downloaded Tableau quantity: {Path(result['quantity']).name}")
     print(f"Downloaded Tableau value: {Path(result['value']).name}")

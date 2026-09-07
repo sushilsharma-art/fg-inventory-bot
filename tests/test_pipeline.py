@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 import csv
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -22,6 +24,7 @@ from secondary_sales import (
     attach_secondary_metrics,
     build_secondary_sales,
 )
+from secondary_override import load_secondary_override, pack_secondary_override
 from sales_history import read_manual_history
 from tableau_history_refresh import _write_wide, normalize_exports
 
@@ -263,6 +266,37 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(int(result["Secondary Overall DOI"]), 64)
         self.assertEqual(float(result["Secondary Mumbai DRR"]), 8.0)
         self.assertEqual(int(result["Secondary Mumbai DOI"]), 75)
+
+    def test_secure_secondary_override_round_trip(self) -> None:
+        run_date = date(2026, 8, 7)
+        secondary, quality = build_secondary_sales(
+            self._channel_sales_source(), run_date
+        )
+        encoded = pack_secondary_override(secondary, quality, run_date)
+        with patch.dict(
+            os.environ,
+            {"FG_BOT_SECONDARY_OVERRIDE_B64_1": encoded},
+            clear=True,
+        ):
+            restored, restored_quality = load_secondary_override(run_date)
+        self.assertEqual(restored["source_file"], secondary["source_file"])
+        self.assertEqual(restored["data_through"], secondary["data_through"])
+        self.assertEqual(len(restored["sku_summary"]), len(secondary["sku_summary"]))
+        self.assertTrue(restored_quality["secure_override"])
+
+    def test_secure_secondary_override_is_ignored_on_another_report_date(self) -> None:
+        run_date = date(2026, 8, 7)
+        secondary, quality = build_secondary_sales(
+            self._channel_sales_source(), run_date
+        )
+        encoded = pack_secondary_override(secondary, quality, run_date)
+        with patch.dict(
+            os.environ,
+            {"FG_BOT_SECONDARY_OVERRIDE_B64_1": encoded},
+            clear=True,
+        ):
+            restored = load_secondary_override(date(2026, 8, 8))
+        self.assertIsNone(restored)
 
     def test_previous_secondary_metrics_are_carried_with_current_inventory_doi(self) -> None:
         frame, _ = build_inventory_frame(

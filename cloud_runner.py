@@ -28,6 +28,7 @@ from secondary_sales import (
     attach_secondary_metrics,
     build_secondary_sales,
 )
+from secondary_override import load_secondary_override
 from sales_history import import_manual_history
 from source_fetcher import fetch_current_sources, validate_local_sources
 from tableau_downloader import download_tableau_exports
@@ -318,9 +319,24 @@ def main() -> int:
             include_channel_sales=args.require_channel_sales,
         )
 
+    secondary_override = load_secondary_override(run_date)
     tableau_quality = None
     tableau_warning = None
-    if args.refresh_tableau or args.require_tableau:
+    if secondary_override:
+        override_secondary, override_quality = secondary_override
+        sources["channel_sales"] = Path(override_secondary["source_file"])
+        source_evidence["channel_sales"] = {
+            "source": "Anshul Bhatkar Gmail attachment (secure reviewed override)",
+            "file": override_secondary["source_file"],
+            "data_through": override_secondary["data_through"].isoformat(),
+            "format_match": True,
+        }
+        print(
+            "Using reviewed Secondary Sales attachment "
+            f"{override_secondary['source_file']} through "
+            f"{override_secondary['data_through']}."
+        )
+    elif args.refresh_tableau or args.require_tableau:
         try:
             exports = download_tableau_exports(dated_work / "tableau_downloads")
             tableau_quality = refresh_history(
@@ -356,7 +372,10 @@ def main() -> int:
     secondary = None
     secondary_quality = None
     history_seed_quality = None
-    if "channel_sales" in sources:
+    if secondary_override:
+        secondary, secondary_quality = secondary_override
+        frame = attach_secondary_metrics(frame, secondary)
+    elif "channel_sales" in sources:
         if args.history_qty_csv.exists() and args.history_value_csv.exists():
             history_seed_quality = import_manual_history(
                 args.sales_history_db,

@@ -18,7 +18,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -596,6 +596,16 @@ def refresh_history(
         quantity_path, value_path
     )
     parsed_dates = _canonical_datetimes(date_columns)
+    latest_common_date = parsed_dates.max().date()
+    quantity_date_max = date.fromisoformat(str(quality["quantity"]["date_max"]))
+    value_date_max = date.fromisoformat(str(quality["value"]["date_max"]))
+    if latest_common_date < report_date - timedelta(days=2):
+        raise ValueError(
+            f"Tableau exports are stale for {report_date}: "
+            f"EComm Overall quantity ends {quantity_date_max}; "
+            f"EComm Overall Sales value ends {value_date_max}; "
+            f"latest common date is {latest_common_date}"
+        )
     months = sorted(parsed_dates.strftime("%Y-%m").unique())
     if len(months) != 1:
         raise ValueError("A scheduled Tableau refresh must contain exactly one month")

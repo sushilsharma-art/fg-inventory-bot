@@ -40,6 +40,8 @@ REPORTS = (
         key="fg",
         label="FG INVENTORY REPORT",
         base_urls=(
+            # UniCommerce rotated the manual/current export on 2026-09-07.
+            "https://dawxwb4zstkgp.cloudfront.net/mosaicwellnesspvtlmt/6a9e5934547c863b8a4e8d33/",
             "https://dawxwb4zstkgp.cloudfront.net/mosaicwellnesspvtlmt/68b536bc0c49eb100391e690/",
         ),
         encoded_prefix="FG%20INVENTORY%20REPORT_",
@@ -47,7 +49,8 @@ REPORTS = (
         expected_header="Category",
         min_size=5_000_000,
         min_rows=50_000,
-        scan_windows=((time(10, 15), time(11, 35)),),
+        # The 2026-09-07 export completed at 11:58:07.
+        scan_windows=((time(10, 15), time(12, 5)),),
     ),
     ReportSpec(
         key="shelfwise",
@@ -90,6 +93,9 @@ REPORTS = (
     ),
 )
 
+URL_PROBE_WORKERS = 16
+URL_PROBE_BATCH_SECONDS = 120
+
 
 def _stamps(
     run_date: date,
@@ -97,11 +103,11 @@ def _stamps(
 ) -> list[str]:
     output: list[str] = []
     for start_time, end_time in windows:
-        current = datetime.combine(run_date, start_time)
-        end = datetime.combine(run_date, end_time)
-        while current <= end:
+        start = datetime.combine(run_date, start_time)
+        current = datetime.combine(run_date, end_time)
+        while current >= start:
             output.append(current.strftime("%d%m%Y%H%M%S"))
-            current += timedelta(seconds=1)
+            current -= timedelta(seconds=1)
     return output
 
 
@@ -119,24 +125,30 @@ def _url_exists(url: str) -> bool:
 
 
 def scan_cloudfront(spec: ReportSpec, run_date: date) -> str:
-    stamps = _stamps(run_date, spec.scan_windows)
+    # Probe newest timestamps first in bounded batches. Submitting an entire
+    # multi-hour window at once can trigger CloudFront throttling and miss a
+    # valid export. Window order remains significant so each report can put
+    # its most likely completion period first.
+    stamps = list(dict.fromkeys(_stamps(run_date, spec.scan_windows)))
     for base_url in spec.base_urls:
-        candidates = [
-            (stamp, f"{base_url}{spec.encoded_prefix}{stamp}.csv")
-            for stamp in stamps
-        ]
-        hits: list[tuple[str, str]] = []
-        with ThreadPoolExecutor(max_workers=24) as pool:
-            futures = {
-                pool.submit(_url_exists, url): (stamp, url)
-                for stamp, url in candidates
-            }
-            for future in as_completed(futures):
-                stamp, url = futures[future]
-                if future.result():
-                    hits.append((stamp, url))
-        if hits:
-            return sorted(hits)[-1][1]
+        for start in range(0, len(stamps), URL_PROBE_BATCH_SECONDS):
+            stamp_batch = stamps[start : start + URL_PROBE_BATCH_SECONDS]
+            candidates = [
+                (stamp, f"{base_url}{spec.encoded_prefix}{stamp}.csv")
+                for stamp in stamp_batch
+            ]
+            hits: list[tuple[str, str]] = []
+            with ThreadPoolExecutor(max_workers=URL_PROBE_WORKERS) as pool:
+                futures = {
+                    pool.submit(_url_exists, url): (stamp, url)
+                    for stamp, url in candidates
+                }
+                for future in as_completed(futures):
+                    stamp, url = futures[future]
+                    if future.result():
+                        hits.append((stamp, url))
+            if hits:
+                return sorted(hits)[-1][1]
     raise RuntimeError(
         f"No current-date {spec.label} export was found in the approved windows."
     )

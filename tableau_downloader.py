@@ -95,6 +95,66 @@ def _assert_excel(path: Path) -> None:
             raise ValueError(f"Tableau did not return an Excel workbook: {path.name}")
 
 
+def _refresh_task_diagnostic(
+    session: requests.Session,
+    *,
+    server: str,
+    api_version: str,
+    site_id: str,
+    workbook_id: str,
+    workbook_updated_at: str,
+) -> dict[str, object]:
+    """Read non-secret refresh metadata without making the download depend on it."""
+    result: dict[str, object] = {
+        "query_status": "unavailable",
+        "workbook_updated_at": workbook_updated_at,
+        "visible_tasks": 0,
+        "matching_workbook_tasks": 0,
+        "consecutive_failed_count": None,
+        "next_run_at": "",
+    }
+    try:
+        response = session.get(
+            f"{server}/api/{api_version}/sites/{site_id}/tasks/extractRefreshes",
+            params={"pageSize": 1000},
+            timeout=60,
+        )
+        if not response.ok:
+            result["query_status"] = f"http_{response.status_code}"
+            return result
+        root = _xml(response)
+    except requests.RequestException as exc:
+        result["query_status"] = type(exc).__name__
+        return result
+
+    refreshes = root.findall(f".//{{{XML_NAMESPACE}}}extractRefresh")
+    matching = []
+    for refresh in refreshes:
+        workbooks = refresh.findall(f".//{{{XML_NAMESPACE}}}workbook")
+        if any(item.get("id") == workbook_id for item in workbooks):
+            matching.append(refresh)
+    failures = []
+    next_runs = []
+    for refresh in matching:
+        try:
+            failures.append(int(refresh.get("consecutiveFailedCount", "0")))
+        except ValueError:
+            pass
+        schedule = refresh.find(f".//{{{XML_NAMESPACE}}}schedule")
+        if schedule is not None and schedule.get("nextRunAt"):
+            next_runs.append(str(schedule.get("nextRunAt")))
+    result.update(
+        {
+            "query_status": "ok",
+            "visible_tasks": len(refreshes),
+            "matching_workbook_tasks": len(matching),
+            "consecutive_failed_count": max(failures) if failures else None,
+            "next_run_at": max(next_runs) if next_runs else "",
+        }
+    )
+    return result
+
+
 def download_tableau_exports(output_dir: Path) -> dict[str, object]:
     server = (os.getenv("TABLEAU_SERVER_URL") or DEFAULT_SERVER).strip().rstrip("/")
     site = (os.getenv("TABLEAU_SITE_CONTENT_URL") or DEFAULT_SITE).strip()
@@ -136,6 +196,25 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
         workbook_root = _xml(workbook_response)
         workbooks = list(workbook_root.findall(f".//{{{XML_NAMESPACE}}}workbook"))
         workbook_id = _select_workbook(workbooks, workbook_name)
+        selected_workbook = next(
+            item for item in workbooks if item.get("id") == workbook_id
+        )
+        refresh_task = _refresh_task_diagnostic(
+            session,
+            server=server,
+            api_version=api_version,
+            site_id=site_id,
+            workbook_id=workbook_id,
+            workbook_updated_at=str(selected_workbook.get("updatedAt", "")),
+        )
+        print(
+            "Tableau refresh task: "
+            f"query={refresh_task['query_status']}; "
+            f"workbook_updated_at={refresh_task['workbook_updated_at'] or 'unknown'}; "
+            f"matching_tasks={refresh_task['matching_workbook_tasks']}; "
+            f"consecutive_failures={refresh_task['consecutive_failed_count']}; "
+            f"next_run_at={refresh_task['next_run_at'] or 'unknown'}"
+        )
 
         views_response = session.get(
             f"{server}/api/{api_version}/sites/{site_id}/workbooks/{workbook_id}/views",
@@ -212,6 +291,7 @@ def download_tableau_exports(output_dir: Path) -> dict[str, object]:
             "value_selector_field": value_selector_field,
             "value_selector_value": value_selector_value,
             "site": site,
+            "refresh_task": refresh_task,
         }
     finally:
         if token and site_id:

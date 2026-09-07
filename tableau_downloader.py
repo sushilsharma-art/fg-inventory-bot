@@ -355,6 +355,27 @@ def refresh_tableau_workbook_now(*, wait_timeout: int = 900) -> dict[str, object
             headers={"Content-Type": "application/xml"},
             timeout=60,
         )
+        if not refresh_response.ok:
+            error_code = "unknown"
+            summary = ""
+            detail = ""
+            try:
+                error_root = ElementTree.fromstring(refresh_response.content)
+                error = error_root.find(f".//{{{XML_NAMESPACE}}}error")
+                if error is not None:
+                    error_code = str(error.get("code", "unknown"))
+                    summary_node = error.find(f"{{{XML_NAMESPACE}}}summary")
+                    detail_node = error.find(f"{{{XML_NAMESPACE}}}detail")
+                    summary = (summary_node.text or "").strip() if summary_node is not None else ""
+                    detail = (detail_node.text or "").strip() if detail_node is not None else ""
+            except ElementTree.ParseError:
+                pass
+            explanation = ": ".join(part for part in (summary, detail) if part)
+            raise PermissionError(
+                "Tableau rejected the workbook refresh "
+                f"(HTTP {refresh_response.status_code}, code {error_code})"
+                + (f": {explanation}" if explanation else "")
+            )
         refresh_root = _xml(refresh_response)
         job = refresh_root.find(f".//{{{XML_NAMESPACE}}}job")
         if job is None or not job.get("id"):

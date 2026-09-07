@@ -39,6 +39,21 @@ IST = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent
 
 
+def _secondary_source_is_older(
+    candidate_through: str | None,
+    previous_secondary: dict,
+) -> bool:
+    previous_through = previous_secondary.get("dataThrough")
+    if not candidate_through or not previous_through:
+        return False
+    try:
+        return date.fromisoformat(candidate_through) < date.fromisoformat(
+            previous_through
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", help="Report date in YYYY-MM-DD. Defaults to today in IST.")
@@ -339,13 +354,23 @@ def main() -> int:
     elif args.refresh_tableau or args.require_tableau:
         try:
             exports = download_tableau_exports(dated_work / "tableau_downloads")
-            tableau_quality = refresh_history(
+            refreshed_tableau_quality = refresh_history(
                 Path(exports["quantity"]),
                 Path(exports["value"]),
                 history_db=args.sales_history_db,
                 output_root=ROOT / "data" / "tableau_history",
                 report_date=run_date,
             )
+            if _secondary_source_is_older(
+                refreshed_tableau_quality.get("date_max"), previous_secondary
+            ):
+                raise ValueError(
+                    "Tableau data through "
+                    f"{refreshed_tableau_quality['date_max']} is older than the "
+                    "published Secondary data through "
+                    f"{previous_secondary['dataThrough']}"
+                )
+            tableau_quality = refreshed_tableau_quality
             channel_workbook = Path(tableau_quality["channel_workbook"])
             sources["channel_sales"] = channel_workbook
             source_evidence["channel_sales"] = {

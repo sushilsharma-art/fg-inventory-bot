@@ -4,11 +4,21 @@ import os
 import unittest
 from unittest.mock import patch
 
-from cloud_runner import _decrypt_with_passcodes, _login_passcode
+from cloud_runner import (
+    _decrypt_with_passcodes,
+    _login_passcode,
+    _secondary_source_is_older,
+)
 from crypto_payload import encrypt_payload
 
 
 class CloudRunnerPasscodeTests(unittest.TestCase):
+    def test_older_tableau_secondary_source_is_rejected(self) -> None:
+        previous = {"dataThrough": "2026-09-06"}
+        self.assertTrue(_secondary_source_is_older("2026-08-27", previous))
+        self.assertFalse(_secondary_source_is_older("2026-09-06", previous))
+        self.assertFalse(_secondary_source_is_older("2026-09-07", previous))
+
     def test_login_passcode_falls_back_to_private_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(_login_passcode("private-key"), "private-key")

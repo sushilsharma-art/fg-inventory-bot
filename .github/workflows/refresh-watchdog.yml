@@ -1,0 +1,58 @@
+name: FG Inventory Refresh Watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Independent fallback checks in IST: 10:58, 11:22, 11:46, 12:10, 12:44.
+    # These deliberately avoid the top of the UTC hour, when GitHub documents
+    # that scheduled events are most likely to be delayed or dropped.
+    - cron: "28 5 * * *"
+    - cron: "52 5 * * *"
+    - cron: "16 6 * * *"
+    - cron: "40 6 * * *"
+    - cron: "14 7 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  recover-missed-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check live date and recover a missed run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_date=$(TZ=Asia/Kolkata date +%F)
+          status_url="https://sushilsharma-art.github.io/fg-inventory-bot/status.json?watchdog=${GITHUB_RUN_ID}"
+          live_date=$(curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' "$status_url" \
+            | python -c 'import json,sys; print(json.load(sys.stdin).get("report_date", ""))' \
+            || true)
+          if [[ "$live_date" == "$report_date" ]]; then
+            echo "Live snapshot is already current for $report_date."
+            exit 0
+          fi
+
+          active_runs=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow daily-refresh.yml \
+            --limit 20 \
+            --json status \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length')
+          if [[ "$active_runs" != "0" ]]; then
+            echo "A daily refresh is already queued or running."
+            exit 0
+          fi
+
+          echo "Live snapshot is stale ($live_date); dispatching $report_date recovery."
+          gh workflow run daily-refresh.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f run_date="$report_date" \
+            -f force_rebuild=true \
+            -f refresh_tableau_source=false

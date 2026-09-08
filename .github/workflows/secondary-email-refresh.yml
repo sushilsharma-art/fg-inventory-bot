@@ -1,0 +1,53 @@
+name: FG Secondary Sales Evening Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Anshul's attachment normally arrives around 17:25 IST. Independent
+    # retries run at 17:35, 18:05 and 18:47 IST.
+    - cron: "5 12 * * *"
+    - cron: "35 12 * * *"
+    - cron: "17 13 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-email-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch only when Gmail OAuth is configured
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$GMAIL_CLIENT_ID" || -z "$GMAIL_CLIENT_SECRET" || -z "$GMAIL_REFRESH_TOKEN" ]]; then
+            echo "Gmail OAuth is not configured; Secondary email refresh skipped safely."
+            exit 0
+          fi
+
+          active_runs=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow daily-refresh.yml \
+            --limit 20 \
+            --json status \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length')
+          if [[ "$active_runs" != "0" ]]; then
+            echo "A daily refresh is already queued or running."
+            exit 0
+          fi
+
+          report_date=$(TZ=Asia/Kolkata date +%F)
+          gh workflow run daily-refresh.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f run_date="$report_date" \
+            -f force_rebuild=true \
+            -f refresh_tableau_source=false \
+            -f require_channel_sales=true

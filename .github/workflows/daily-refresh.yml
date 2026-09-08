@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      require_channel_sales:
+        description: Require today's Anshul Channel Sales attachment
+        required: false
+        default: false
+        type: boolean
   schedule:
     # GitHub schedules use UTC. Staggered, non-round minutes reduce scheduler
     # congestion; every run exits quickly once today's verified snapshot exists.
@@ -97,6 +102,7 @@ jobs:
           FG_BOT_SECONDARY_OVERRIDE_B64_9: ${{ secrets.FG_BOT_SECONDARY_OVERRIDE_B64_9 }}
           INPUT_RUN_DATE: ${{ inputs.run_date }}
           INPUT_FORCE: ${{ inputs.force_rebuild }}
+          INPUT_REQUIRE_CHANNEL_SALES: ${{ inputs.require_channel_sales }}
         shell: bash
         run: |
           # Inventory publication requires all three current-date operational
@@ -105,6 +111,9 @@ jobs:
           args=(--refresh-tableau)
           if [[ -n "$INPUT_RUN_DATE" ]]; then args+=(--date "$INPUT_RUN_DATE"); fi
           if [[ "$INPUT_FORCE" == "true" ]]; then args+=(--force); fi
+          if [[ "$INPUT_REQUIRE_CHANNEL_SALES" == "true" ]]; then
+            args+=(--require-channel-sales)
+          fi
           python cloud_runner.py "${args[@]}"
 
       - name: Record one successful daily heartbeat

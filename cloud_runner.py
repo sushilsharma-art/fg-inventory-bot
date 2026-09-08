@@ -351,6 +351,11 @@ def main() -> int:
             f"{override_secondary['source_file']} through "
             f"{override_secondary['data_through']}."
         )
+    elif "channel_sales" in sources:
+        print(
+            "Using the exact current-date Gmail Channel Sales attachment; "
+            "Tableau will not replace it."
+        )
     elif args.refresh_tableau or args.require_tableau:
         try:
             exports = download_tableau_exports(dated_work / "tableau_downloads")

@@ -13,6 +13,7 @@ import pandas as pd
 
 from config_bundle import pack_config, restore_config
 from crypto_payload import decrypt_payload, encrypt_payload
+from eta_plan import attach_eta_metrics
 from inventory_pipeline import (
     FG_SOURCE_COLUMNS,
     build_freshness,
@@ -167,7 +168,17 @@ class InventoryPipelineTests(unittest.TestCase):
             self._shelf_source(), self.master, date(2026, 8, 7), min_rows=1, min_skus=1
         )
         payload = build_payload(
-            frame,
+            attach_eta_metrics(
+                frame,
+                pd.DataFrame(
+                    [["SKU1", date(2026, 8, 8), 320]],
+                    columns=[
+                        "SkuCode",
+                        "Next Connection Date",
+                        "Next Connection Units",
+                    ],
+                ),
+            ),
             freshness,
             report_date=date(2026, 8, 7),
             source_files={"fg": "fg.csv", "shelfwise": "shelf.csv"},
@@ -179,6 +190,9 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(dark_store["d"], 10)
         self.assertEqual(record["fresh80"], 100)
         self.assertEqual(record["freshLE80"], 30)
+        self.assertEqual(record["nextEtaDate"], "2026-08-08")
+        self.assertEqual(record["nextEtaUnits"], 320)
+        self.assertEqual(record["postEtaPrimaryOverallDOI"], 9)
 
     def test_unmapped_facility_blocks_publication(self) -> None:
         source = pd.read_csv(self._fg_source())

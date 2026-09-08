@@ -147,6 +147,14 @@ if (secondaryCard.includes("<td>3PL</td>")) throw new Error("Legacy 3PL display 
 if (secondaryCard.indexOf("Secondary · Overall") > secondaryCard.indexOf("Primary · Overall")) {
   throw new Error("Secondary Overall must appear before Primary Overall.");
 }
+const etaSku = FG_DATA.skus.find(item => item.nextEtaDate && item.nextEtaUnits > 0);
+if (etaSku) {
+  const etaCard = ask(etaSku.code);
+  assertIncludes(etaCard, "Next stock connection", "SKU ETA card");
+  assertIncludes(etaCard, "After connection", "post-connection DOI projection");
+  assertIncludes(etaCard, "Secondary Overall", "post-connection Secondary DOI");
+  assertIncludes(etaCard, "Primary Overall", "post-connection Primary DOI");
+}
 const secondaryMumbaiSku = FG_DATA.skus.find(item => item.secMumbaiDRR > 0 && item.locs.some(location => location.n === "Mumbai" && location.s > 0));
 if (!secondaryMumbaiSku) throw new Error("No SKU is available for Secondary Mumbai DOI validation.");
 const secondaryMumbaiStock = secondaryMumbaiSku.locs.find(location => location.n === "Mumbai").s;

@@ -16,6 +16,11 @@ import requests
 
 from crypto_payload import decrypt_payload, encrypt_payload
 from config_bundle import restore_config
+from eta_plan import (
+    attach_eta_metrics,
+    attach_previous_eta_metrics,
+    download_eta_plan,
+)
 from inventory_pipeline import (
     build_freshness,
     build_inventory_frame,
@@ -296,12 +301,18 @@ def main() -> int:
         previous_secondary.get("sourceFile")
         == f"Channel Sales Tracker Dump_{run_date:%Y-%m-%d}.xlsx"
     )
+    previous_has_eta = bool(
+        previous
+        and int(previous.get("schemaVersion", 0)) >= 5
+        and isinstance(previous.get("etaPlan"), dict)
+    )
     if (
         previous
         and previous.get("dateKey") == run_date.isoformat()
         and not args.force
         and not args.refresh_tableau
         and not args.require_tableau
+        and previous_has_eta
         and (not args.require_channel_sales or previous_has_current_sales)
     ):
         digest = hashlib.sha256(previous_blob or b"").hexdigest()
@@ -434,6 +445,62 @@ def main() -> int:
                 + "the latest reviewed Secondary Sales metrics were preserved."
             ),
         }
+
+    eta_quality = None
+    try:
+        eta_path, eta_plan, eta_quality = download_eta_plan(
+            dated_work / "eta_plan",
+            run_date,
+        )
+        frame = attach_eta_metrics(frame, eta_plan)
+        matched_eta_skus = int(
+            frame.loc[frame["Next Connection Date"].notna(), "SkuCode"].nunique()
+        )
+        eta_quality["matched_inventory_skus"] = matched_eta_skus
+        eta_quality["unmatched_plan_skus"] = max(
+            0, eta_quality["upcoming_skus"] - matched_eta_skus
+        )
+        sources["eta_plan"] = eta_path
+        source_evidence["eta_plan"] = {
+            "source": "Google Sheets public CSV export",
+            "file": eta_path.name,
+            "sheet": eta_quality["sheet"],
+            "future_date_start": eta_quality["future_date_start"],
+            "future_date_end": eta_quality["future_date_end"],
+            "upcoming_skus": eta_quality["upcoming_skus"],
+            "matched_inventory_skus": matched_eta_skus,
+        }
+        print(
+            "Loaded GRN Rolling ETA plan: "
+            f"{eta_quality['upcoming_skus']:,} SKUs with a future connection."
+        )
+    except Exception as exc:
+        if previous and previous.get("skus"):
+            frame, carried_rows = attach_previous_eta_metrics(
+                frame,
+                previous["skus"],
+                run_date,
+            )
+        else:
+            carried_rows = 0
+            frame, _ = attach_previous_eta_metrics(frame, [], run_date)
+        eta_quality = {
+            "status": "carried_forward" if carried_rows else "unavailable",
+            "sheet": "1. GRN Rolling",
+            "source_file": (
+                previous.get("etaPlan", {}).get("sourceFile", "") if previous else ""
+            ),
+            "upcoming_skus": carried_rows,
+            "warning": str(exc),
+        }
+        print(
+            "WARNING: GRN Rolling refresh failed; "
+            + (
+                f"preserved {carried_rows:,} still-future ETA rows."
+                if carried_rows
+                else "no valid previous ETA rows were available."
+            )
+        )
     workbook_path = dated_work / f"FG_Inventory_Daily_{run_date:%d%m%Y}.xlsx"
     write_summary_workbook(frame, workbook_path, secondary)
     quality = {
@@ -449,6 +516,7 @@ def main() -> int:
     }
     if secondary_quality:
         quality["secondary_sales"] = secondary_quality
+    quality["eta_plan"] = eta_quality
     if history_seed_quality:
         quality["secondary_sales_history_seed"] = history_seed_quality
     if tableau_quality:
@@ -493,6 +561,9 @@ def main() -> int:
             "shelfwise_source": sources["shelfwise"].name,
             "sale_orders_source": sources["sale_orders"].name,
             "channel_sales_source": sources.get("channel_sales", Path("")).name,
+            "eta_plan_source": sources.get("eta_plan", Path("")).name,
+            "eta_upcoming_skus": eta_quality.get("upcoming_skus", 0),
+            "eta_status": eta_quality.get("status"),
     }
     _atomic_json(args.site_dir / "status.json", status)
     _atomic_json(

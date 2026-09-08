@@ -6,6 +6,7 @@ A secure, WhatsApp-style inventory bot built from the original Claude implementa
 
 - `summary`, `low doi`, `near expiry`, `out of stock`, `excess stock`
 - Any SKU code or product name, including natural questions such as `how much stock do we have for nutrimix vanilla`
+- Every SKU reply also shows its next planned stock-connection date, incoming units, and projected Secondary Overall and Primary Overall DOI after that receipt.
 - Follow-ups such as `this sku in Mumbai` or `this sku trend`
 - Brand, location, day-wise trend, date comparison, SIT and top-DRR questions
 - Secondary-sales questions such as `total sale`, `channel level sale`, `MTD sale`, `last month sale`, `channel DRR`, `Blinkit sales`, and `<SKU> channel DRR`. Channel-level sales show current MTD, the previous complete month, and the latest three complete months in both units and value.
@@ -14,7 +15,7 @@ Every answer can be copied, saved as an image, forwarded to WhatsApp, or used as
 
 ## Daily cloud refresh
 
-The morning workflow in `.github/workflows/daily-refresh.yml` runs at 10:45 AM IST, with three 30-minute retries. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files, authenticates to Tableau Cloud with a Personal Access Token, downloads the approved `EComm Overall` quantity and `EComm Overall Sales` value crosstabs, reconciles them, refreshes secondary-sales history, rebuilds the encrypted WhatsApp-style bot, and publishes the verified snapshot. The evening workflow independently checks Anshul Bhatkar's dated `Channel Sales Tracker Dump` attachment at 5:40 PM IST, with 6:00 PM and 6:30 PM retries. Once the repository and secrets are configured, no computer needs to remain switched on.
+The morning workflow in `.github/workflows/daily-refresh.yml` runs at 10:45 AM IST, with three 30-minute retries. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files; reads the approved `1. GRN Rolling` Google Sheet directly for future SKU connections; authenticates to Tableau Cloud with a Personal Access Token; reconciles the approved sales extracts; refreshes secondary-sales history; rebuilds the encrypted WhatsApp-style bot; and publishes the verified snapshot. The evening workflow independently checks Anshul Bhatkar's dated `Channel Sales Tracker Dump` attachment at 5:40 PM IST, with 6:00 PM and 6:30 PM retries. Once the repository and secrets are configured, no computer needs to remain switched on.
 
 Required private repository secret: `FG_BOT_PASSCODE`. It protects the encrypted
 configuration and history seed and must not be shared with bot users.
@@ -28,6 +29,8 @@ Required Tableau repository secrets: `TABLEAU_PAT_NAME` and `TABLEAU_PAT_SECRET`
 Optional Gmail source secrets: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Without them, the workflow uses the validated UniCommerce timestamp scan.
 
 Optional repository variable: `FG_BOT_DATA_URL`, pointing to the deployed `data.enc.json`, preserves rolling history across runs.
+
+Optional repository variable: `FG_BOT_ETA_CSV_URL`. Leave it blank to use the approved `1. GRN Rolling` Google Sheet CSV export. The workflow stores only derived per-SKU ETA fields inside the encrypted payload; it never commits the raw planning sheet.
 
 Optional Tableau variables are `TABLEAU_SERVER_URL`, `TABLEAU_SITE_CONTENT_URL`, `TABLEAU_WORKBOOK_CONTENT_URL`, `TABLEAU_QUANTITY_VIEW`, and `TABLEAU_VALUE_VIEW`; the Man Matters production defaults are used when they are blank.
 

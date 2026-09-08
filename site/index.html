@@ -106,6 +106,15 @@
   .metric strong { display:block; color:var(--ink); font-size:14px; margin-top:2px; font-variant-numeric:tabular-nums; }
   .metric.risk { background:#fff5f4; border-color:#f6ccc8; }
   .metric.good { background:#f1faf4; border-color:#cce8d4; }
+  .eta-card { margin:9px 0; padding:10px; border:1px solid #9fd7c2; border-radius:11px; background:linear-gradient(135deg,#eafaf3,#f8fffc); }
+  .eta-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:7px; }
+  .eta-head b { color:var(--wa-dark); font-size:13px; }
+  .eta-head span { color:#087f5b; font-weight:800; font-size:13px; text-align:right; }
+  .eta-doi { display:grid; grid-template-columns:repeat(2,minmax(120px,1fr)); gap:7px; }
+  .eta-doi div { background:#fff; border:1px solid #d8ebe3; border-radius:8px; padding:7px 8px; }
+  .eta-doi small { display:block; color:var(--muted); font-size:10px; }
+  .eta-doi strong { display:block; margin-top:2px; font-size:14px; font-variant-numeric:tabular-nums; }
+  .eta-empty { color:var(--muted); font-size:11px; margin:7px 0; }
   .sales-stack { display:grid; gap:8px; margin:9px 0 4px; }
   .sales-block { border:1px solid #dfe8e4; border-radius:10px; padding:9px 10px; background:#fbfdfc; }
   .sales-block.total { background:linear-gradient(135deg,#eefaf5,#f9fffc); border-color:#abd9c7; }
@@ -378,6 +387,15 @@ function rSku(s){
     +(CS?'<tr><td>Secondary · Mumbai</td><td class="num">'+fmtIN(s.secMumbaiDRR||0)+'</td>'+doiCell(s.secMumbaiDOI||0)+'</tr>':'')
     +'<tr><td>WEB</td><td class="num">'+fmtIN(s.pl3DRR)+'</td>'+doiCell(s.pl3DOI)+'</tr></table>'
     +(CS?'<small>Secondary · Mumbai = plain Mumbai SOH ÷ Secondary DRR excluding WebApp.</small><br><br>':'');
+  if(s.nextEtaDate && s.nextEtaUnits){
+    var postSecondary=s.postEtaSecOverallDOI==null?'—':fmtIN(s.postEtaSecOverallDOI)+' days';
+    var postPrimary=s.postEtaPrimaryOverallDOI==null?'—':fmtIN(s.postEtaPrimaryOverallDOI)+' days';
+    h+='<div class="eta-card"><div class="eta-head"><b>📦 Next stock connection</b><span>'+dDisp(s.nextEtaDate)+' · '+fmtIN(s.nextEtaUnits)+' units</span></div>'
+      +'<div class="eta-doi"><div><small>After connection</small><strong>Secondary Overall · '+postSecondary+'</strong></div>'
+      +'<div><small>After connection</small><strong>Primary Overall · '+postPrimary+'</strong></div></div></div>';
+  } else if(D.etaPlan){
+    h+='<div class="eta-empty">📦 No upcoming connection is currently planned for this SKU.</div>';
+  }
   if(CS){
     h+='<b>Secondary sales:</b><div class="metric-grid">'
       +metric('7-day units',fmtIN(s.sec7||0))
@@ -637,7 +655,7 @@ function rHelp(){
     +'• <b>summary</b> — today · <b>summary 15-07</b> / <b>15 july</b> — any stored day<br>'
     +'• <b>compare 12-07 vs 19-07</b> — two days side by side with changes<br>'
     +'<b>SKU</b><br>'
-    +'• type any <b>SKU code</b> or <b>product name</b> — e.g. "nutrimix vanilla"<br>'
+    +'• type any <b>SKU code</b> or <b>product name</b> — also shows the next stock connection and projected DOI<br>'
     +'• <b>this sku trend</b> / <b>last 15 days history of this sku</b> — remembers the SKU you just viewed<br>'
     +'<b>Reports</b><br>'
     +'• <b>low doi</b> / <b>doi &lt; 30</b> · <b>top drr</b> · <b>top value</b> · <b>sit report</b> · <b>trend</b> (add "last N days")<br>'

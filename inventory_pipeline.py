@@ -18,6 +18,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from eta_plan import ETA_OUTPUT_COLUMNS
 from secondary_sales import SECONDARY_OUTPUT_COLUMNS, secondary_payload
 
 
@@ -643,6 +644,13 @@ def build_payload(
             else 0
         )
         has_secondary = all(column in sku_frame.columns for column in SECONDARY_OUTPUT_COLUMNS)
+        eta_date = first.get("Next Connection Date")
+        if eta_date is not None and not pd.isna(eta_date):
+            eta_date = pd.Timestamp(eta_date).date().isoformat()
+        else:
+            eta_date = None
+        eta_units = first.get("Next Connection Units")
+        has_eta = eta_date is not None and eta_units is not None and not pd.isna(eta_units)
         sku_records.append(
             {
                 "code": str(sku),
@@ -695,6 +703,26 @@ def build_payload(
                 "secMumbaiDOI": round(
                     _number(first.get("Secondary Mumbai DOI", 0))
                 ),
+                "nextEtaDate": eta_date,
+                "nextEtaUnits": (
+                    round(_number(eta_units)) if has_eta else None
+                ),
+                "postEtaSecOverallDOI": (
+                    None
+                    if not has_eta
+                    or pd.isna(first.get("Post Connection Secondary Overall DOI"))
+                    else round(
+                        _number(first.get("Post Connection Secondary Overall DOI"))
+                    )
+                ),
+                "postEtaPrimaryOverallDOI": (
+                    None
+                    if not has_eta
+                    or pd.isna(first.get("Post Connection Primary Overall DOI"))
+                    else round(
+                        _number(first.get("Post Connection Primary Overall DOI"))
+                    )
+                ),
                 "fresh80": round(sku_fresh["fresh80"]),
                 "freshLE80": round(sku_fresh["freshLE80"]),
                 "freshMissing": round(sku_fresh["missing"]),
@@ -707,7 +735,7 @@ def build_payload(
         )
     sku_records.sort(key=lambda item: (-item["drr"], item["code"]))
     payload: dict[str, Any] = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "reportDate": report_date.strftime("%d-%m-%Y"),
         "dateKey": report_date.isoformat(),
         "sourceFile": source_files.get("fg", ""),
@@ -718,6 +746,18 @@ def build_payload(
         "skus": sku_records,
         "quality": quality,
     }
+    eta_quality = quality.get("eta_plan") if isinstance(quality, dict) else None
+    if isinstance(eta_quality, dict):
+        payload["etaPlan"] = {
+            "sheet": eta_quality.get("sheet", "1. GRN Rolling"),
+            "status": eta_quality.get("status", "unknown"),
+            "sourceFile": eta_quality.get("source_file", ""),
+            "fetchedAt": eta_quality.get("fetched_at"),
+            "futureStart": eta_quality.get("future_date_start"),
+            "futureEnd": eta_quality.get("future_date_end"),
+            "upcomingSkus": eta_quality.get("upcoming_skus", 0),
+            "matchedInventorySkus": eta_quality.get("matched_inventory_skus", 0),
+        }
     if secondary:
         payload["secondarySales"] = secondary_payload(secondary)
     elif isinstance(previous_secondary, dict) and previous_secondary:
@@ -841,6 +881,7 @@ def write_summary_workbook(
     output_columns = [
         *OUTPUT_COLUMNS,
         *[column for column in SECONDARY_OUTPUT_COLUMNS if column in frame.columns],
+        *[column for column in ETA_OUTPUT_COLUMNS if column in frame.columns],
     ]
     sheet.append(output_columns)
     for row in frame[output_columns].itertuples(index=False, name=None):

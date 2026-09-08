@@ -6,7 +6,7 @@ A secure, WhatsApp-style inventory bot built from the original Claude implementa
 
 - `summary`, `low doi`, `near expiry`, `out of stock`, `excess stock`
 - Any SKU code or product name, including natural questions such as `how much stock do we have for nutrimix vanilla`
-- Every SKU reply also shows its next planned stock-connection date, incoming units, and projected Secondary Overall and Primary Overall DOI after that receipt.
+- Every SKU reply also shows its next planned stock-connection date, waiting days, incoming units, and projected Secondary Overall and Primary Overall DOI after that receipt. The projection deducts normal DRR sales for every waiting day before adding the incoming quantity.
 - Follow-ups such as `this sku in Mumbai` or `this sku trend`
 - Brand, location, day-wise trend, date comparison, SIT and top-DRR questions
 - Secondary-sales questions such as `total sale`, `channel level sale`, `MTD sale`, `last month sale`, `channel DRR`, `Blinkit sales`, and `<SKU> channel DRR`. Channel-level sales show current MTD, the previous complete month, and the latest three complete months in both units and value.

@@ -114,6 +114,7 @@
   .eta-doi div { background:#fff; border:1px solid #d8ebe3; border-radius:8px; padding:7px 8px; }
   .eta-doi small { display:block; color:var(--muted); font-size:10px; }
   .eta-doi strong { display:block; margin-top:2px; font-size:14px; font-variant-numeric:tabular-nums; }
+  .eta-note { color:var(--muted); font-size:10px; margin-top:7px; }
   .eta-empty { color:var(--muted); font-size:11px; margin:7px 0; }
   .sales-stack { display:grid; gap:8px; margin:9px 0 4px; }
   .sales-block { border:1px solid #dfe8e4; border-radius:10px; padding:9px 10px; background:#fbfdfc; }
@@ -390,9 +391,11 @@ function rSku(s){
   if(s.nextEtaDate && s.nextEtaUnits){
     var postSecondary=s.postEtaSecOverallDOI==null?'—':fmtIN(s.postEtaSecOverallDOI)+' days';
     var postPrimary=s.postEtaPrimaryOverallDOI==null?'—':fmtIN(s.postEtaPrimaryOverallDOI)+' days';
-    h+='<div class="eta-card"><div class="eta-head"><b>📦 Next stock connection</b><span>'+dDisp(s.nextEtaDate)+' · '+fmtIN(s.nextEtaUnits)+' units</span></div>'
+    var etaDays=Number(s.nextEtaDays||0);
+    h+='<div class="eta-card"><div class="eta-head"><b>📦 Next stock connection</b><span>'+dDisp(s.nextEtaDate)+' · in '+fmtIN(etaDays)+' day'+(etaDays===1?'':'s')+'<br>'+fmtIN(s.nextEtaUnits)+' units</span></div>'
       +'<div class="eta-doi"><div><small>After connection</small><strong>Secondary Overall · '+postSecondary+'</strong></div>'
-      +'<div><small>After connection</small><strong>Primary Overall · '+postPrimary+'</strong></div></div></div>';
+      +'<div><small>After connection</small><strong>Primary Overall · '+postPrimary+'</strong></div></div>'
+      +'<div class="eta-note">Normal DRR sales for the '+fmtIN(etaDays)+' waiting day'+(etaDays===1?' is':'s are')+' deducted before adding the incoming stock.</div></div>';
   } else if(D.etaPlan){
     h+='<div class="eta-empty">📦 No upcoming connection is currently planned for this SKU.</div>';
   }

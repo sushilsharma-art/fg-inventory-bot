@@ -452,7 +452,7 @@ def main() -> int:
             dated_work / "eta_plan",
             run_date,
         )
-        frame = attach_eta_metrics(frame, eta_plan)
+        frame = attach_eta_metrics(frame, eta_plan, run_date)
         matched_eta_skus = int(
             frame.loc[frame["Next Connection Date"].notna(), "SkuCode"].nunique()
         )

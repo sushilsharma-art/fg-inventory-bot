@@ -707,6 +707,12 @@ def build_payload(
                 "nextEtaUnits": (
                     round(_number(eta_units)) if has_eta else None
                 ),
+                "nextEtaDays": (
+                    round(_number(first.get("Days Until Connection")))
+                    if has_eta
+                    and not pd.isna(first.get("Days Until Connection"))
+                    else None
+                ),
                 "postEtaSecOverallDOI": (
                     None
                     if not has_eta

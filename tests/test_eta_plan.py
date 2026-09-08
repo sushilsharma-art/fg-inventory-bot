@@ -59,14 +59,16 @@ class EtaPlanTests(unittest.TestCase):
             ],
         )
         plan = pd.DataFrame(
-            [["SKU1", date(2026, 9, 9), 320]],
+            [["SKU1", date(2026, 9, 13), 320]],
             columns=["SkuCode", "Next Connection Date", "Next Connection Units"],
         )
-        output = attach_eta_metrics(frame, plan)
+        output = attach_eta_metrics(frame, plan, date(2026, 9, 8))
         row = output.iloc[0]
-        # Eligible stock is 600+120+300=1,020; RTV stock is excluded.
-        self.assertEqual(int(row["Post Connection Secondary Overall DOI"]), 84)
-        self.assertEqual(int(row["Post Connection Primary Overall DOI"]), 9)
+        # Eligible stock is 1,020 and RTV is excluded. Before the connection,
+        # five days of normal sales are consumed independently for each DRR.
+        self.assertEqual(int(row["Days Until Connection"]), 5)
+        self.assertEqual(int(row["Post Connection Secondary Overall DOI"]), 79)
+        self.assertEqual(int(row["Post Connection Primary Overall DOI"]), 4)
 
     def test_previous_eta_is_discarded_after_its_connection_date(self) -> None:
         frame = pd.DataFrame(

@@ -178,6 +178,7 @@ class InventoryPipelineTests(unittest.TestCase):
                         "Next Connection Units",
                     ],
                 ),
+                date(2026, 8, 7),
             ),
             freshness,
             report_date=date(2026, 8, 7),
@@ -192,7 +193,8 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(record["freshLE80"], 30)
         self.assertEqual(record["nextEtaDate"], "2026-08-08")
         self.assertEqual(record["nextEtaUnits"], 320)
-        self.assertEqual(record["postEtaPrimaryOverallDOI"], 9)
+        self.assertEqual(record["nextEtaDays"], 1)
+        self.assertEqual(record["postEtaPrimaryOverallDOI"], 8)
 
     def test_unmapped_facility_blocks_publication(self) -> None:
         source = pd.read_csv(self._fg_source())

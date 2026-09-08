@@ -22,6 +22,7 @@ ETA_SOURCE_URL = (
 )
 ETA_OUTPUT_COLUMNS = [
     "Next Connection Date",
+    "Days Until Connection",
     "Next Connection Units",
     "Post Connection Secondary Overall DOI",
     "Post Connection Primary Overall DOI",
@@ -202,7 +203,11 @@ def download_eta_plan(
     return target, plan, quality
 
 
-def _attach_plan(frame: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
+def _attach_plan(
+    frame: pd.DataFrame,
+    plan: pd.DataFrame,
+    report_date: date,
+) -> pd.DataFrame:
     output = frame.copy()
     keyed_plan = plan.copy()
     if not keyed_plan.empty:
@@ -212,6 +217,10 @@ def _attach_plan(frame: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
     for column in ["Next Connection Date", "Next Connection Units"]:
         mapping = keyed_plan[column] if column in keyed_plan.columns else pd.Series(dtype=object)
         output[column] = key.map(mapping)
+    connection_dates = pd.to_datetime(output["Next Connection Date"], errors="coerce")
+    output["Days Until Connection"] = (
+        connection_dates - pd.Timestamp(report_date)
+    ).dt.days.clip(lower=0)
 
     inventory_check = (
         output["Inventory Check"].fillna("").astype(str).str.strip().str.casefold().eq("yes")
@@ -223,26 +232,33 @@ def _attach_plan(frame: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
     ].sum().sum(axis=1)
     output["_eta_network_stock"] = output["SkuCode"].map(stock).fillna(0.0)
     incoming = pd.to_numeric(output["Next Connection Units"], errors="coerce")
-    projected_stock = output["_eta_network_stock"] + incoming
+    days = pd.to_numeric(output["Days Until Connection"], errors="coerce")
 
     if "Secondary DRR" in output.columns:
         secondary_drr = pd.to_numeric(output["Secondary DRR"], errors="coerce")
     else:
         secondary_drr = pd.Series(0.0, index=output.index)
     primary_drr = pd.to_numeric(output["Overall DRR"], errors="coerce")
+    secondary_stock_at_eta = (
+        output["_eta_network_stock"] - secondary_drr.fillna(0) * days.fillna(0)
+    ).clip(lower=0) + incoming
+    primary_stock_at_eta = (
+        output["_eta_network_stock"] - primary_drr.fillna(0) * days.fillna(0)
+    ).clip(lower=0) + incoming
     output["Post Connection Secondary Overall DOI"] = np.where(
-        incoming.notna() & secondary_drr.gt(0),
-        projected_stock / secondary_drr,
+        incoming.notna() & days.notna() & secondary_drr.gt(0),
+        secondary_stock_at_eta / secondary_drr,
         np.nan,
     )
     output["Post Connection Primary Overall DOI"] = np.where(
-        incoming.notna() & primary_drr.gt(0),
-        projected_stock / primary_drr,
+        incoming.notna() & days.notna() & primary_drr.gt(0),
+        primary_stock_at_eta / primary_drr,
         np.nan,
     )
     output.drop(columns="_eta_network_stock", inplace=True)
     for column in [
         "Next Connection Units",
+        "Days Until Connection",
         "Post Connection Secondary Overall DOI",
         "Post Connection Primary Overall DOI",
     ]:
@@ -250,8 +266,12 @@ def _attach_plan(frame: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
     return output
 
 
-def attach_eta_metrics(frame: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
-    return _attach_plan(frame, plan)
+def attach_eta_metrics(
+    frame: pd.DataFrame,
+    plan: pd.DataFrame,
+    report_date: date,
+) -> pd.DataFrame:
+    return _attach_plan(frame, plan, report_date)
 
 
 def attach_previous_eta_metrics(
@@ -279,4 +299,4 @@ def attach_previous_eta_metrics(
         rows,
         columns=["SkuCode", "Next Connection Date", "Next Connection Units"],
     )
-    return _attach_plan(frame, plan), len(plan)
+    return _attach_plan(frame, plan, report_date), len(plan)

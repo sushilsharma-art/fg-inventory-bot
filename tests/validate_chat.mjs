@@ -161,6 +161,7 @@ if (etaSku) {
   assertIncludes(etaCard, "After connection", "post-connection DOI projection");
   assertIncludes(etaCard, "Secondary Overall", "post-connection Secondary DOI");
   assertIncludes(etaCard, "Primary Overall", "post-connection Primary DOI");
+  assertIncludes(etaCard, "deducted before adding", "pre-ETA DRR consumption note");
 }
 const secondaryMumbaiSku = FG_DATA.skus.find(item => item.secMumbaiDRR > 0 && item.locs.some(location => location.n === "Mumbai" && location.s > 0));
 if (!secondaryMumbaiSku) throw new Error("No SKU is available for Secondary Mumbai DOI validation.");

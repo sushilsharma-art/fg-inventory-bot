@@ -6,7 +6,11 @@ import zlib from "node:zlib";
 const root = new URL("../", import.meta.url);
 const html = fs.readFileSync(new URL("site/index.html", root), "utf8");
 const envelope = JSON.parse(fs.readFileSync(new URL("site/data.enc.json", root), "utf8"));
-const passcode = fs.readFileSync("C:/Users/itsup/Desktop/DS FR/whatsapp/passcode.txt", "utf8").trim();
+const passcode = (
+  process.env.FG_BOT_LOGIN_PASSCODE?.trim()
+  || process.env.FG_BOT_PASSCODE?.trim()
+  || fs.readFileSync("C:/Users/itsup/Desktop/DS FR/whatsapp/passcode.txt", "utf8").trim()
+);
 
 function decrypt(value) {
   const salt = Buffer.from(value.salt, "base64");
@@ -148,6 +152,9 @@ if (secondaryCard.indexOf("Secondary · Overall") > secondaryCard.indexOf("Prima
   throw new Error("Secondary Overall must appear before Primary Overall.");
 }
 const etaSku = FG_DATA.skus.find(item => item.nextEtaDate && item.nextEtaUnits > 0);
+if (FG_DATA.etaPlan?.status === "fresh" && !etaSku) {
+  throw new Error("Fresh ETA plan contains no SKU ETA card.");
+}
 if (etaSku) {
   const etaCard = ask(etaSku.code);
   assertIncludes(etaCard, "Next stock connection", "SKU ETA card");
@@ -171,5 +178,6 @@ console.log(JSON.stringify({
   reportDate: FG_DATA.reportDate,
   skus: FG_DATA.skus.length,
   rows: FG_DATA.rowCount,
-  commands: ["summary", "help", "natural SKU", "context location", "B2B Mumbai location", "near expiry", "out of stock", "secondary sales", "channel level sale", "last 2 months", "named month", "channel DRR", "SKU channel DRR"],
+  etaCards: FG_DATA.skus.filter(item => item.nextEtaDate && item.nextEtaUnits > 0).length,
+  commands: ["summary", "help", "natural SKU", "context location", "B2B Mumbai location", "near expiry", "out of stock", "secondary sales", "channel level sale", "last 2 months", "named month", "channel DRR", "SKU channel DRR", "SKU ETA"],
 }));

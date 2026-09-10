@@ -554,9 +554,11 @@ def attach_secondary_metrics(
         "Secondary DRR 7 Day",
         "Secondary DRR 30 Day",
         "Secondary DRR",
-        "Secondary Mumbai DRR",
     ]:
         output[column] = output[column].round(2)
+    # Preserve calculation precision for the Mumbai denominator so its DOI
+    # reconciles to the payload. Presentation code formats DRR for users.
+    output["Secondary Mumbai DRR"] = output["Secondary Mumbai DRR"].round(6)
     output["Secondary MTD Sales Value"] = output["Secondary MTD Sales Value"].round(2)
     output["Secondary Last Month Sales Value"] = output[
         "Secondary Last Month Sales Value"

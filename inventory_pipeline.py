@@ -644,6 +644,16 @@ def build_payload(
             else 0
         )
         has_secondary = all(column in sku_frame.columns for column in SECONDARY_OUTPUT_COLUMNS)
+        secondary_mumbai_drr = round(
+            _number(first.get("Secondary Mumbai DRR", 0)), 6
+        )
+        # Recalculate from the same rounded Mumbai SOH published in `locs`.
+        # This keeps the user-visible coverage card internally reconcilable.
+        secondary_mumbai_doi = (
+            round(mumbai_location["s"] / secondary_mumbai_drr)
+            if mumbai_location and secondary_mumbai_drr > 0
+            else 0
+        )
         eta_date = first.get("Next Connection Date")
         if eta_date is not None and not pd.isna(eta_date):
             eta_date = pd.Timestamp(eta_date).date().isoformat()
@@ -697,12 +707,8 @@ def build_payload(
                 "secOverallDOI": round(
                     _number(first.get("Secondary Overall DOI", 0))
                 ),
-                "secMumbaiDRR": round(
-                    _number(first.get("Secondary Mumbai DRR", 0)), 2
-                ),
-                "secMumbaiDOI": round(
-                    _number(first.get("Secondary Mumbai DOI", 0))
-                ),
+                "secMumbaiDRR": secondary_mumbai_drr,
+                "secMumbaiDOI": secondary_mumbai_doi,
                 "nextEtaDate": eta_date,
                 "nextEtaUnits": (
                     round(_number(eta_units)) if has_eta else None

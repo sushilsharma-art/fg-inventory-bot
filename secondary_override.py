@@ -117,9 +117,15 @@ def load_secondary_override(run_date: date) -> tuple[dict[str, Any], dict[str, A
         return None
 
     packed = document.get("secondary") or {}
-    expected_source = f"Channel Sales Tracker Dump_{run_date:%Y-%m-%d}.xlsx"
-    if packed.get("source_file") != expected_source:
-        raise ValueError("Secondary override attachment name does not match the report date.")
+    accepted_sources = {
+        f"Channel Sales Tracker Dump_{run_date:%Y-%m-%d}.xlsx",
+        f"Channel Sales Tracker Dump_{run_date - timedelta(days=1):%Y-%m-%d}.xlsx",
+    }
+    if packed.get("source_file") not in accepted_sources:
+        raise ValueError(
+            "Secondary override attachment must match the report date or "
+            "the approved previous-evening snapshot."
+        )
     through = date.fromisoformat(str(packed.get("data_through")))
     if through > run_date or through < run_date - timedelta(days=2):
         raise ValueError(

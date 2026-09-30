@@ -319,6 +319,25 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(len(restored["sku_summary"]), len(secondary["sku_summary"]))
         self.assertTrue(restored_quality["secure_override"])
 
+    def test_previous_evening_secondary_override_is_valid_next_morning(self) -> None:
+        attachment_date = date(2026, 8, 7)
+        report_date = date(2026, 8, 8)
+        secondary, quality = build_secondary_sales(
+            self._channel_sales_source(), report_date
+        )
+        encoded = pack_secondary_override(secondary, quality, report_date)
+        with patch.dict(
+            os.environ,
+            {"FG_BOT_SECONDARY_OVERRIDE_B64_1": encoded},
+            clear=True,
+        ):
+            restored, restored_quality = load_secondary_override(report_date)
+        self.assertEqual(
+            restored["source_file"],
+            f"Channel Sales Tracker Dump_{attachment_date:%Y-%m-%d}.xlsx",
+        )
+        self.assertTrue(restored_quality["secure_override"])
+
     def test_secure_secondary_override_is_ignored_on_another_report_date(self) -> None:
         run_date = date(2026, 8, 7)
         secondary, quality = build_secondary_sales(

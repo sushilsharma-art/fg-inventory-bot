@@ -2,7 +2,9 @@
 
 Exact Gmail URLs are used when optional OAuth credentials are configured.
 Otherwise the known UniCommerce CloudFront timestamp windows are scanned.
-All downloads are staged as .part files and promoted only after validation.
+Anshul's Channel Sales workbook can also be exported from the Google Sheet
+linked in the approved daily email, so Secondary Sales can refresh without a
+mailbox token. All downloads are staged and promoted only after validation.
 """
 
 from __future__ import annotations
@@ -99,6 +101,10 @@ REPORTS = (
 
 URL_PROBE_WORKERS = 16
 URL_PROBE_BATCH_SECONDS = 120
+CHANNEL_SALES_PUBLIC_EXPORT_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1eaCVGTs_3p3xnO9ujuF95POPVUIRWZlZhi3RsA3Foqo/export?format=xlsx"
+)
 
 
 def _stamps(
@@ -442,6 +448,61 @@ def fetch_channel_sales_attachment(
         raise
 
 
+def fetch_channel_sales_public_sheet(
+    run_date: date,
+    output_dir: Path,
+    *,
+    lookback_days: int = 0,
+) -> tuple[Path, dict[str, object]]:
+    """Export and validate the Google Sheet linked in Anshul's daily email."""
+    # The morning workflow intentionally uses the previous evening's snapshot.
+    # A same-day required run retains the same-date filename contract.
+    snapshot_date = run_date - timedelta(days=1 if lookback_days else 0)
+    filename = f"Channel Sales Tracker Dump_{snapshot_date:%Y-%m-%d}.xlsx"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / filename
+    staging_dir = output_dir / ".channel-sales-staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staging_path = staging_dir / filename
+    staging_path.unlink(missing_ok=True)
+    export_url = os.getenv(
+        "CHANNEL_SALES_PUBLIC_EXPORT_URL",
+        CHANNEL_SALES_PUBLIC_EXPORT_URL,
+    ).strip()
+    try:
+        with requests.get(
+            export_url,
+            stream=True,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "*/*"},
+            timeout=(10, 240),
+        ) as response:
+            response.raise_for_status()
+            with staging_path.open("wb") as handle:
+                for chunk in response.iter_content(1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+        checks = validate_channel_sales_attachment(
+            staging_path,
+            run_date,
+            max_attachment_age_days=max(0, lookback_days),
+        )
+        staging_path.replace(destination)
+        checks.update(
+            {
+                "file": destination.name,
+                "source_type": "public_google_sheet_export",
+                "discovery": "Google Sheets direct XLSX export",
+                "requested_report_date": run_date.isoformat(),
+                "selected_attachment_date": snapshot_date.isoformat(),
+                "lookback_days": max(0, lookback_days),
+            }
+        )
+        return destination, checks
+    except Exception:
+        staging_path.unlink(missing_ok=True)
+        raise
+
+
 def fetch_current_sources(
     run_date: date,
     output_dir: Path,
@@ -464,6 +525,7 @@ def fetch_current_sources(
         paths[spec.key] = path
         evidence[spec.key] = checks
     if include_channel_sales:
+        gmail_error: Exception | None = None
         try:
             path, checks = fetch_channel_sales_attachment(
                 run_date,
@@ -473,13 +535,29 @@ def fetch_current_sources(
             paths["channel_sales"] = path
             evidence["channel_sales"] = checks
         except Exception as exc:
-            if require_channel_sales:
-                raise
-            evidence["channel_sales_lookup"] = {
-                "status": "unavailable",
-                "lookback_days": channel_sales_lookback_days,
-                "warning": str(exc),
-            }
+            gmail_error = exc
+            try:
+                path, checks = fetch_channel_sales_public_sheet(
+                    run_date,
+                    output_dir,
+                    lookback_days=channel_sales_lookback_days,
+                )
+                checks["gmail_warning"] = str(gmail_error)
+                paths["channel_sales"] = path
+                evidence["channel_sales"] = checks
+            except Exception as sheet_error:
+                if require_channel_sales:
+                    raise RuntimeError(
+                        "Channel Sales was unavailable from both Gmail and the "
+                        f"approved Google Sheet. Gmail: {gmail_error}; "
+                        f"Google Sheet: {sheet_error}"
+                    ) from sheet_error
+                evidence["channel_sales_lookup"] = {
+                    "status": "unavailable",
+                    "lookback_days": channel_sales_lookback_days,
+                    "gmail_warning": str(gmail_error),
+                    "sheet_warning": str(sheet_error),
+                }
     return paths, evidence
 
 

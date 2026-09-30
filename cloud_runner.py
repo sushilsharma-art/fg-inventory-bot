@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -57,6 +57,18 @@ def _secondary_source_is_older(
         )
     except (TypeError, ValueError):
         return False
+
+
+def _secondary_is_current(previous_secondary: dict, run_date: date) -> bool:
+    """Treat through D-1 or D-2 as a valid morning Secondary snapshot."""
+    value = previous_secondary.get("dataThrough")
+    if not value:
+        return False
+    try:
+        through = date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return False
+    return run_date - timedelta(days=2) <= through <= run_date
 
 
 def parse_args() -> argparse.Namespace:
@@ -305,9 +317,9 @@ def main() -> int:
     if previous_warning:
         print(f"WARNING: {previous_warning}")
     previous_secondary = previous.get("secondarySales", {}) if previous else {}
-    previous_has_current_sales = (
-        previous_secondary.get("sourceFile")
-        == f"Channel Sales Tracker Dump_{run_date:%Y-%m-%d}.xlsx"
+    previous_has_current_sales = _secondary_is_current(
+        previous_secondary,
+        run_date,
     )
     previous_has_eta = bool(
         previous
@@ -320,7 +332,10 @@ def main() -> int:
         and not args.force
         and not args.require_tableau
         and previous_has_eta
-        and (not args.require_channel_sales or previous_has_current_sales)
+        and (
+            not (args.require_channel_sales or args.refresh_channel_sales)
+            or previous_has_current_sales
+        )
     ):
         digest = hashlib.sha256(previous_blob or b"").hexdigest()
         status = _status(

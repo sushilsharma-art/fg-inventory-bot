@@ -91,6 +91,7 @@ class SourceFetcherTests(unittest.TestCase):
             )
         )
 
+    @patch("source_fetcher.fetch_channel_sales_public_sheet")
     @patch("source_fetcher.fetch_channel_sales_attachment")
     @patch("source_fetcher.download_and_verify")
     @patch("source_fetcher.scan_cloudfront")
@@ -101,6 +102,7 @@ class SourceFetcherTests(unittest.TestCase):
         scan,
         download,
         channel_sales,
+        public_sheet,
     ) -> None:
         scan.return_value = "https://example.test/source.csv"
         download.side_effect = [
@@ -109,6 +111,7 @@ class SourceFetcherTests(unittest.TestCase):
             (Path("orders.csv"), {"file": "orders.csv"}),
         ]
         channel_sales.side_effect = RuntimeError("Gmail OAuth is required")
+        public_sheet.side_effect = RuntimeError("Google Sheet unavailable")
 
         paths, evidence = fetch_current_sources(
             date(2026, 9, 30),
@@ -125,6 +128,55 @@ class SourceFetcherTests(unittest.TestCase):
             Path("work"),
             lookback_days=1,
         )
+        public_sheet.assert_called_once_with(
+            date(2026, 9, 30),
+            Path("work"),
+            lookback_days=1,
+        )
+
+    @patch("source_fetcher.fetch_channel_sales_public_sheet")
+    @patch("source_fetcher.fetch_channel_sales_attachment")
+    @patch("source_fetcher.download_and_verify")
+    @patch("source_fetcher.scan_cloudfront")
+    @patch("source_fetcher.gmail_export_urls", return_value={})
+    def test_public_sheet_refreshes_sales_when_gmail_oauth_is_missing(
+        self,
+        gmail_urls,
+        scan,
+        download,
+        channel_sales,
+        public_sheet,
+    ) -> None:
+        scan.return_value = "https://example.test/source.csv"
+        download.side_effect = [
+            (Path("fg.csv"), {"file": "fg.csv"}),
+            (Path("shelf.csv"), {"file": "shelf.csv"}),
+            (Path("orders.csv"), {"file": "orders.csv"}),
+        ]
+        channel_sales.side_effect = RuntimeError("Gmail OAuth is required")
+        public_sheet.return_value = (
+            Path("Channel Sales Tracker Dump_2026-09-29.xlsx"),
+            {
+                "file": "Channel Sales Tracker Dump_2026-09-29.xlsx",
+                "latest_order_date": "2026-09-29",
+                "discovery": "Google Sheets direct XLSX export",
+            },
+        )
+
+        paths, evidence = fetch_current_sources(
+            date(2026, 9, 30),
+            Path("work"),
+            include_channel_sales=True,
+            channel_sales_lookback_days=1,
+            require_channel_sales=False,
+        )
+
+        self.assertIn("channel_sales", paths)
+        self.assertEqual(
+            evidence["channel_sales"]["discovery"],
+            "Google Sheets direct XLSX export",
+        )
+        self.assertIn("Gmail OAuth is required", evidence["channel_sales"]["gmail_warning"])
 
 
 if __name__ == "__main__":

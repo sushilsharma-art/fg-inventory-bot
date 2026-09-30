@@ -105,7 +105,9 @@ jobs:
           # sources. Tableau is refreshed independently; if it is late, keep
           # the last reviewed Secondary metrics and expose their exact through date.
           # Every morning, first try Anshul's same-day or previous-evening
-          # attachment. Missing Gmail access must not block fresh inventory.
+          # attachment. If Gmail OAuth is unavailable, export and validate the
+          # approved Google Sheet linked in that email. Missing sales access
+          # must never block fresh inventory.
           args=(--refresh-tableau --refresh-channel-sales)
           if [[ -n "$INPUT_RUN_DATE" ]]; then args+=(--date "$INPUT_RUN_DATE"); fi
           if [[ "$INPUT_FORCE" == "true" ]]; then args+=(--force); fi

@@ -134,8 +134,12 @@ def scan_cloudfront(spec: ReportSpec, run_date: date) -> str:
     # valid export. Window order remains significant so each report can put
     # its most likely completion period first.
     stamps = list(dict.fromkeys(_stamps(run_date, spec.scan_windows)))
-    for base_url in spec.base_urls:
-        for start in range(0, len(stamps), URL_PROBE_BATCH_SECONDS):
+    # Probe each timestamp batch across every known storage folder before
+    # moving further back in time. UniCommerce can rotate back to an older
+    # folder (as it did on 2026-09-30); exhausting the full time range in one
+    # inactive folder delayed an otherwise available current-day refresh.
+    for start in range(0, len(stamps), URL_PROBE_BATCH_SECONDS):
+        for base_url in spec.base_urls:
             stamp_batch = stamps[start : start + URL_PROBE_BATCH_SECONDS]
             candidates = [
                 (stamp, f"{base_url}{spec.encoded_prefix}{stamp}.csv")

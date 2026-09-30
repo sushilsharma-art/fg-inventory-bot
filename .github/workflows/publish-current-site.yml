@@ -27,6 +27,41 @@ jobs:
       - name: Check out bot
         uses: actions/checkout@v4
 
+      - name: Preserve newer live inventory snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_base="https://sushilsharma-art.github.io/fg-inventory-bot"
+          cache_bust="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          live_status="$(mktemp)"
+          live_data="$(mktemp)"
+          if ! curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            "$live_base/status.json?deploy=$cache_bust" -o "$live_status"; then
+            echo "Live status is unavailable; publishing the verified repository snapshot."
+            exit 0
+          fi
+
+          repo_date=$(python -c 'import json; print(json.load(open("site/status.json")).get("report_date", ""))')
+          live_date=$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("report_date", ""))' "$live_status")
+          if [[ -z "$live_date" || "$live_date" < "$repo_date" || "$live_date" == "$repo_date" ]]; then
+            echo "Repository snapshot ($repo_date) is not older than live ($live_date)."
+            exit 0
+          fi
+
+          echo "Preserving newer live snapshot $live_date over repository snapshot $repo_date."
+          curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            "$live_base/data.enc.json?deploy=$cache_bust" -o "$live_data"
+          expected_hash=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["payload_sha256"])' "$live_status")
+          actual_hash=$(sha256sum "$live_data" | awk '{print $1}')
+          if [[ "$actual_hash" != "$expected_hash" ]]; then
+            echo "Live payload hash mismatch: $actual_hash != $expected_hash" >&2
+            exit 1
+          fi
+          mv "$live_data" site/data.enc.json
+          cp "$live_status" site/status.json
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

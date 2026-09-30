@@ -55,6 +55,42 @@ class SourceFetcherTests(unittest.TestCase):
             "FG%20INVENTORY%20REPORT_07092026100002.csv",
         )
 
+    @patch("source_fetcher._url_exists")
+    def test_scan_checks_rotated_folders_before_older_time_batches(self, exists) -> None:
+        calls: list[str] = []
+
+        def available(url: str) -> bool:
+            calls.append(url)
+            return "/active-folder/" in url and url.endswith("30092026100130.csv")
+
+        exists.side_effect = available
+        spec = ReportSpec(
+            key="fg",
+            label="FG INVENTORY REPORT",
+            base_urls=(
+                "https://example.test/inactive-folder/",
+                "https://example.test/active-folder/",
+            ),
+            encoded_prefix="FG%20INVENTORY%20REPORT_",
+            filename_prefix="FG INVENTORY REPORT_",
+            expected_header="Category",
+            min_size=1,
+            min_rows=1,
+            scan_windows=((time(10, 0), time(10, 2)),),
+        )
+
+        url = scan_cloudfront(spec, date(2026, 9, 30))
+
+        self.assertIn("/active-folder/", url)
+        self.assertIn("30092026100130", url)
+        self.assertFalse(
+            any(
+                "/inactive-folder/" in requested
+                and "30092026100000" in requested
+                for requested in calls
+            )
+        )
+
     @patch("source_fetcher.fetch_channel_sales_attachment")
     @patch("source_fetcher.download_and_verify")
     @patch("source_fetcher.scan_cloudfront")

@@ -116,6 +116,8 @@
   .eta-doi strong { display:block; margin-top:2px; font-size:14px; font-variant-numeric:tabular-nums; }
   .eta-note { color:var(--muted); font-size:10px; margin-top:7px; }
   .eta-empty { color:var(--muted); font-size:11px; margin:7px 0; }
+  .compact-line { color:#54656f; font-size:11px; line-height:1.55; margin:5px 0; }
+  .compact-line b { color:var(--wa-dark); }
   .sales-stack { display:grid; gap:8px; margin:9px 0 4px; }
   .sales-block { border:1px solid #dfe8e4; border-radius:10px; padding:9px 10px; background:#fbfdfc; }
   .sales-block.total { background:linear-gradient(135deg,#eefaf5,#f9fffc); border-color:#abd9c7; }
@@ -377,9 +379,8 @@ function rSku(s){
     +metric('SOH',fmtIN(s.soh))
     +metric('SIT',fmtIN(s.sit))
     +metric('DRR',fmtIN(s.drr)+'/day')
-    +metric('DOI',s.drr?Math.round(s.doi)+' days':'—',s.doi>0&&s.doi<21?'risk':(s.doi>45?'good':''))
-    +metric('Inventory value',money(s.val))
-    +metric('Last 7d sales',fmtIN(s.l7))+'</div>';
+    +metric('DOI',s.drr?Math.round(s.doi)+' days':'—',s.doi>0&&s.doi<21?'risk':(s.doi>45?'good':''))+'</div>'
+    +'<div class="compact-line">Value <b>'+money(s.val)+'</b> · Primary 7d sale <b>'+fmtIN(s.l7)+'</b></div>';
   h+='<table><tr><th></th><th class="num">DRR</th><th class="num">DOI</th></tr>'
     +(CS?'<tr><td>Secondary · Overall</td><td class="num">'+fmtIN(s.secDRR||0)+'</td>'+doiCell(s.secOverallDOI||0)+'</tr>':'')
     +'<tr><td>Primary · Overall</td><td class="num">'+fmtIN(s.drr)+'</td>'+doiCell(s.doi)+'</tr>'
@@ -387,7 +388,7 @@ function rSku(s){
     +'<tr><td>Primary · Mumbai</td><td class="num">'+fmtIN(s.mumDRR)+'</td>'+doiCell(s.mumDOI)+'</tr>'
     +(CS?'<tr><td>Secondary · Mumbai</td><td class="num">'+fmtIN(s.secMumbaiDRR||0)+'</td>'+doiCell(s.secMumbaiDOI||0)+'</tr>':'')
     +'<tr><td>WEB</td><td class="num">'+fmtIN(s.pl3DRR)+'</td>'+doiCell(s.pl3DOI)+'</tr></table>'
-    +(CS?'<small>Secondary · Mumbai = plain Mumbai SOH ÷ Secondary DRR excluding WebApp.</small><br><br>':'');
+    +(CS?'<small>Secondary Mumbai excludes WebApp.</small>':'');
   if(s.nextEtaDate && s.nextEtaUnits){
     var postSecondary=s.postEtaSecOverallDOI==null?'—':fmtIN(s.postEtaSecOverallDOI)+' days';
     var postPrimary=s.postEtaPrimaryOverallDOI==null?'—':fmtIN(s.postEtaPrimaryOverallDOI)+' days';
@@ -395,18 +396,12 @@ function rSku(s){
     h+='<div class="eta-card"><div class="eta-head"><b>📦 Next stock connection</b><span>'+dDisp(s.nextEtaDate)+' · in '+fmtIN(etaDays)+' day'+(etaDays===1?'':'s')+'<br>'+fmtIN(s.nextEtaUnits)+' units</span></div>'
       +'<div class="eta-doi"><div><small>After connection</small><strong>Secondary Overall · '+postSecondary+'</strong></div>'
       +'<div><small>After connection</small><strong>Primary Overall · '+postPrimary+'</strong></div></div>'
-      +'<div class="eta-note">Normal DRR sales for the '+fmtIN(etaDays)+' waiting day'+(etaDays===1?' is':'s are')+' deducted before adding the incoming stock.</div></div>';
+      +'<div class="eta-note">DRR for '+fmtIN(etaDays)+' day'+(etaDays===1?' is':'s are')+' deducted before adding incoming stock.</div></div>';
   } else if(D.etaPlan){
     h+='<div class="eta-empty">📦 No upcoming connection is currently planned for this SKU.</div>';
   }
   if(CS){
-    h+='<b>Secondary sales:</b><div class="metric-grid">'
-      +metric('7-day units',fmtIN(s.sec7||0))
-      +metric('7-day DRR',fmtIN(s.secDrr7||0)+'/day')
-      +metric('30-day units',fmtIN(s.sec30||0))
-      +metric('30-day DRR',fmtIN(s.secDrr30||0)+'/day')
-      +metric('MTD units',fmtIN(s.secMTDUnits||0))
-      +metric('MTD value',money(s.secMTDValue||0))+'</div>'
+    h+='<div class="compact-line"><b>Secondary:</b> 7d '+fmtIN(s.sec7||0)+' units / '+fmtIN(s.secDrr7||0)+' DRR · 30d '+fmtIN(s.sec30||0)+' units / '+fmtIN(s.secDrr30||0)+' DRR<br>MTD <b>'+fmtIN(s.secMTDUnits||0)+' units · '+money(s.secMTDValue||0)+'</b></div>'
       +pill(s.code+' channel drr','Channel DRR split');
   }
   var showLocs = s.locs.filter(function(L){
@@ -414,9 +409,9 @@ function rSku(s){
     return n!=='not consider' && n!=='offline' && n.indexOf('rtv')!==0;
   });
   if (showLocs.length){
-    h+='<b>Location-wise (top 12):</b><table><tr><th>Location</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">DRR</th><th class="num">DOI</th>'
+    h+='<b>Location-wise (top 8):</b><table><tr><th>Location</th><th class="num">SOH</th><th class="num">SIT</th><th class="num">DRR</th><th class="num">DOI</th>'
       +(D.freshnessAvailable ? '<th class="num">Fresh &gt;80%</th><th class="num">Fresh ≤80%</th>' : '')+'</tr>';
-    showLocs.slice(0,12).forEach(function(L){
+    showLocs.slice(0,8).forEach(function(L){
       h+='<tr><td>'+esc(L.n)+'</td><td class="num">'+fmtIN(L.s)+'</td><td class="num">'+fmtIN(L.t)+'</td><td class="num">'+fmtIN(L.r)+'</td>'+doiCell(L.d)
         +(D.freshnessAvailable ? '<td class="num">'+fmtIN(L.f80||0)+'</td><td class="num">'+fmtIN(L.fle80||0)+'</td>' : '')+'</tr>';
     });
@@ -1057,7 +1052,7 @@ async function tryUnlock(pass, silent){
 }
 btn.onclick=function(){ if(passEl.value) tryUnlock(passEl.value,false); };
 passEl.addEventListener('keydown', function(e){ if(e.key==='Enter'&&passEl.value) tryUnlock(passEl.value,false); });
-fetch('data.enc.json',{cache:'no-cache'}).then(function(r){
+fetch('data.enc.json?v='+Date.now(),{cache:'no-store'}).then(function(r){
   if(!r.ok) throw new Error(r.status);
   return r.json();
 }).then(function(j){
@@ -1065,6 +1060,14 @@ fetch('data.enc.json',{cache:'no-cache'}).then(function(r){
   var saved=null; try{ saved=localStorage.getItem('fg_pass'); }catch(e){}
   if(saved) tryUnlock(saved,true); else passEl.focus();
 }).catch(function(){ msg.textContent='Could not load data.enc.json \u2014 check the file is uploaded next to index.html.'; msg.style.color='#d32f2f'; });
+async function refreshIfNewer(){
+  if(document.visibilityState!=='visible' || !window.FG_DATA) return;
+  try{
+    var s=await fetch('status.json?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();});
+    if(s.report_date && window.FG_DATA.dateKey && s.report_date>window.FG_DATA.dateKey) location.reload();
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',refreshIfNewer);
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
 var installPrompt=null, installBtn=document.getElementById('installBtn');
 window.addEventListener('beforeinstallprompt',function(event){

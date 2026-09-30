@@ -83,6 +83,7 @@ def validate_channel_sales_attachment(
     *,
     min_rows: int = 1_000,
     min_distinct_dates: int = 30,
+    max_attachment_age_days: int = 1,
 ) -> dict[str, Any]:
     if path.suffix.lower() != ".xlsx":
         raise ValueError(f"Channel Sales source must be .xlsx: {path.name}")
@@ -96,9 +97,12 @@ def validate_channel_sales_attachment(
     if not match:
         raise ValueError(f"Unexpected Channel Sales filename: {path.name}")
     attachment_date = date.fromisoformat(match.group(1))
-    if attachment_date != report_date:
+    attachment_age_days = (report_date - attachment_date).days
+    if attachment_age_days < 0 or attachment_age_days > max_attachment_age_days:
         raise ValueError(
-            f"Stale Channel Sales attachment: {attachment_date} != {report_date}"
+            "Stale Channel Sales attachment: "
+            f"{attachment_date} is {attachment_age_days} days from {report_date}; "
+            f"maximum allowed age is {max_attachment_age_days} day(s)."
         )
     if not zipfile.is_zipfile(path):
         raise ValueError(f"Channel Sales attachment is not a valid XLSX file: {path.name}")
@@ -140,6 +144,7 @@ def validate_channel_sales_attachment(
             else "gmail_attachment"
         ),
         "attachment_date": attachment_date.isoformat(),
+        "attachment_age_days": attachment_age_days,
         "size_bytes": path.stat().st_size,
         "raw_rows": len(raw),
         "distinct_dates": int(valid_dates.nunique()),

@@ -3,14 +3,10 @@ name: FG Inventory Refresh Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # Independent fallback checks in IST: 10:58, 11:22, 11:46, 12:10, 12:44.
-    # These deliberately avoid the top of the UTC hour, when GitHub documents
-    # that scheduled events are most likely to be delayed or dropped.
-    - cron: "28 5 * * *"
-    - cron: "52 5 * * *"
-    - cron: "16 6 * * *"
-    - cron: "40 6 * * *"
-    - cron: "14 7 * * *"
+    # Independent fallback checks every 30 minutes from 10:58 AM through
+    # 2:28 PM IST. These avoid the top of the UTC hour, when GitHub schedules
+    # are most likely to be delayed or dropped.
+    - cron: "28,58 5-8 * * *"
 
 permissions:
   actions: write

@@ -49,8 +49,12 @@ REPORTS = (
         expected_header="Category",
         min_size=5_000_000,
         min_rows=50_000,
-        # The 2026-09-07 export completed at 11:58:07.
-        scan_windows=((time(10, 15), time(12, 5)),),
+        # Search the normal completion window first (today: 10:21:55), then
+        # retain the late-export recovery window (2026-09-07: 11:58:07).
+        scan_windows=(
+            (time(10, 15), time(10, 45)),
+            (time(10, 46), time(12, 5)),
+        ),
     ),
     ReportSpec(
         key="shelfwise",
@@ -325,6 +329,8 @@ def _gmail_parts(payload: dict) -> list[dict]:
 def fetch_channel_sales_attachment(
     run_date: date,
     output_dir: Path,
+    *,
+    lookback_days: int = 0,
 ) -> tuple[Path, dict[str, object]]:
     token = _gmail_access_token()
     if not token:
@@ -332,10 +338,11 @@ def fetch_channel_sales_attachment(
             "Gmail OAuth is required for the Channel Sales Tracker attachment."
         )
     headers = {"Authorization": f"Bearer {token}"}
+    first_date = run_date - timedelta(days=max(0, lookback_days))
     next_date = run_date + timedelta(days=1)
     sender = "anshul.bhatkar@mosaicwellness.in"
     query = (
-        f"after:{run_date:%Y/%m/%d} before:{next_date:%Y/%m/%d} "
+        f"after:{first_date:%Y/%m/%d} before:{next_date:%Y/%m/%d} "
         f"from:{sender} subject:(Channel Sales Tracker Dump) has:attachment"
     )
     listing = requests.get(
@@ -345,8 +352,11 @@ def fetch_channel_sales_attachment(
         timeout=30,
     )
     listing.raise_for_status()
-    expected_filename = f"Channel Sales Tracker Dump_{run_date:%Y-%m-%d}.xlsx"
-    candidates: list[tuple[int, str, str]] = []
+    filename_pattern = re.compile(
+        r"Channel Sales Tracker Dump_(\d{4}-\d{2}-\d{2})\.xlsx",
+        flags=re.IGNORECASE,
+    )
+    candidates: list[tuple[date, int, str, str, str]] = []
     for message in listing.json().get("messages", []):
         detail = requests.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message['id']}",
@@ -363,20 +373,36 @@ def fetch_channel_sales_attachment(
         }
         if sender not in message_headers.get("from", "").casefold():
             continue
-        if run_date.isoformat() not in message_headers.get("subject", ""):
-            continue
         for part in _gmail_parts(payload):
             filename = str(part.get("filename") or "")
             attachment_id = str((part.get("body") or {}).get("attachmentId") or "")
-            if filename == expected_filename and attachment_id:
+            match = filename_pattern.fullmatch(filename)
+            if not match or not attachment_id:
+                continue
+            attachment_date = date.fromisoformat(match.group(1))
+            attachment_age = (run_date - attachment_date).days
+            if attachment_age < 0 or attachment_age > max(0, lookback_days):
+                continue
+            if attachment_date.isoformat() not in message_headers.get("subject", ""):
+                continue
+            if attachment_id:
                 candidates.append(
-                    (int(body.get("internalDate") or 0), message["id"], attachment_id)
+                    (
+                        attachment_date,
+                        int(body.get("internalDate") or 0),
+                        message["id"],
+                        attachment_id,
+                        filename,
+                    )
                 )
     if not candidates:
         raise RuntimeError(
-            f"No current-date {expected_filename} attachment was found from {sender}."
+            "No approved Channel Sales Tracker attachment was found from "
+            f"{sender} between {first_date} and {run_date}."
         )
-    _, message_id, attachment_id = sorted(candidates)[-1]
+    attachment_date, _, message_id, attachment_id, expected_filename = sorted(
+        candidates
+    )[-1]
     attachment = requests.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages/"
         f"{message_id}/attachments/{attachment_id}",
@@ -394,10 +420,17 @@ def fetch_channel_sales_attachment(
     try:
         partial.write_bytes(content)
         partial.replace(destination)
-        checks = validate_channel_sales_attachment(destination, run_date)
+        checks = validate_channel_sales_attachment(
+            destination,
+            run_date,
+            max_attachment_age_days=max(0, lookback_days),
+        )
         checks["sender"] = sender
         checks["message_id"] = message_id
         checks["discovery"] = "Gmail exact attachment"
+        checks["requested_report_date"] = run_date.isoformat()
+        checks["selected_attachment_date"] = attachment_date.isoformat()
+        checks["lookback_days"] = max(0, lookback_days)
         return destination, checks
     except Exception:
         partial.unlink(missing_ok=True)
@@ -410,6 +443,8 @@ def fetch_current_sources(
     output_dir: Path,
     *,
     include_channel_sales: bool = False,
+    channel_sales_lookback_days: int = 0,
+    require_channel_sales: bool = True,
 ) -> tuple[dict[str, Path], dict[str, dict[str, object]]]:
     gmail_urls = gmail_export_urls(run_date)
     paths: dict[str, Path] = {}
@@ -425,9 +460,22 @@ def fetch_current_sources(
         paths[spec.key] = path
         evidence[spec.key] = checks
     if include_channel_sales:
-        path, checks = fetch_channel_sales_attachment(run_date, output_dir)
-        paths["channel_sales"] = path
-        evidence["channel_sales"] = checks
+        try:
+            path, checks = fetch_channel_sales_attachment(
+                run_date,
+                output_dir,
+                lookback_days=channel_sales_lookback_days,
+            )
+            paths["channel_sales"] = path
+            evidence["channel_sales"] = checks
+        except Exception as exc:
+            if require_channel_sales:
+                raise
+            evidence["channel_sales_lookup"] = {
+                "status": "unavailable",
+                "lookback_days": channel_sales_lookback_days,
+                "warning": str(exc),
+            }
     return paths, evidence
 
 

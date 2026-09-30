@@ -23,13 +23,9 @@ on:
         default: false
         type: boolean
   schedule:
-    # GitHub schedules use UTC. Staggered, non-round minutes reduce scheduler
-    # congestion; every run exits quickly once today's verified snapshot exists.
-    - cron: "15 5 * * *"
-    - cron: "37 5 * * *"
-    - cron: "59 5 * * *"
-    - cron: "21 6 * * *"
-    - cron: "43 6 * * *"
+    # GitHub schedules use UTC. Retry from 10:45 AM through 2:15 PM IST;
+    # every later run exits quickly once today's verified snapshot exists.
+    - cron: "15,45 5-8 * * *"
 
 concurrency:
   group: fg-inventory-production
@@ -108,7 +104,9 @@ jobs:
           # Inventory publication requires all three current-date operational
           # sources. Tableau is refreshed independently; if it is late, keep
           # the last reviewed Secondary metrics and expose their exact through date.
-          args=(--refresh-tableau)
+          # Every morning, first try Anshul's same-day or previous-evening
+          # attachment. Missing Gmail access must not block fresh inventory.
+          args=(--refresh-tableau --refresh-channel-sales)
           if [[ -n "$INPUT_RUN_DATE" ]]; then args+=(--date "$INPUT_RUN_DATE"); fi
           if [[ "$INPUT_FORCE" == "true" ]]; then args+=(--force); fi
           if [[ "$INPUT_REQUIRE_CHANNEL_SALES" == "true" ]]; then

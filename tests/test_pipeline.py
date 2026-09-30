@@ -24,6 +24,7 @@ from secondary_sales import (
     attach_previous_secondary_metrics,
     attach_secondary_metrics,
     build_secondary_sales,
+    validate_channel_sales_attachment,
 )
 from secondary_override import load_secondary_override, pack_secondary_override
 from sales_history import read_manual_history
@@ -282,6 +283,24 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertEqual(int(result["Secondary Overall DOI"]), 64)
         self.assertEqual(float(result["Secondary Mumbai DRR"]), 8.0)
         self.assertEqual(int(result["Secondary Mumbai DOI"]), 75)
+
+    def test_previous_evening_channel_attachment_is_valid_next_morning(self) -> None:
+        source = self._channel_sales_source()
+        quality = validate_channel_sales_attachment(
+            source,
+            date(2026, 8, 8),
+            min_rows=1,
+            min_distinct_dates=1,
+        )
+        self.assertEqual(quality["attachment_date"], "2026-08-07")
+        self.assertEqual(quality["attachment_age_days"], 1)
+        with self.assertRaisesRegex(ValueError, "maximum allowed age"):
+            validate_channel_sales_attachment(
+                source,
+                date(2026, 8, 9),
+                min_rows=1,
+                min_distinct_dates=1,
+            )
 
     def test_secure_secondary_override_round_trip(self) -> None:
         run_date = date(2026, 8, 7)

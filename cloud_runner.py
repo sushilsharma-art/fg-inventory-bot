@@ -84,6 +84,14 @@ def parse_args() -> argparse.Namespace:
         help="Block publication until the current-date Channel Sales attachment is present.",
     )
     parser.add_argument(
+        "--refresh-channel-sales",
+        action="store_true",
+        help=(
+            "Optionally load the newest Anshul Channel Sales attachment from "
+            "the report date or previous evening without blocking inventory."
+        ),
+    )
+    parser.add_argument(
         "--refresh-tableau",
         action="store_true",
         help="Download and import the approved Tableau quantity and value crosstabs.",
@@ -310,7 +318,6 @@ def main() -> int:
         previous
         and previous.get("dateKey") == run_date.isoformat()
         and not args.force
-        and not args.refresh_tableau
         and not args.require_tableau
         and previous_has_eta
         and (not args.require_channel_sales or previous_has_current_sales)
@@ -342,7 +349,13 @@ def main() -> int:
         sources, source_evidence = fetch_current_sources(
             run_date,
             dated_work / "sources",
-            include_channel_sales=args.require_channel_sales,
+            include_channel_sales=(
+                args.refresh_channel_sales or args.require_channel_sales
+            ),
+            channel_sales_lookback_days=(
+                1 if args.refresh_channel_sales and not args.require_channel_sales else 0
+            ),
+            require_channel_sales=args.require_channel_sales,
         )
 
     secondary_override = load_secondary_override(run_date)
@@ -364,7 +377,7 @@ def main() -> int:
         )
     elif "channel_sales" in sources:
         print(
-            "Using the exact current-date Gmail Channel Sales attachment; "
+            "Using the latest approved Gmail Channel Sales attachment; "
             "Tableau will not replace it."
         )
     elif args.refresh_tableau or args.require_tableau:

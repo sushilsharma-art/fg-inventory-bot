@@ -1,5 +1,5 @@
 /* FG Inventory Assistant — service worker */
-var CACHE = 'fg-chat-v8-lite';
+var CACHE = 'fg-chat-v9-fresh';
 /* Keep the first mobile load small. The 1.6 MB social preview is not app shell. */
 var SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './pako_inflate.min.js'];
 

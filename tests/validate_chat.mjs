@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 
 const root = new URL("../", import.meta.url);
-const html = fs.readFileSync(new URL("site/index.html", root), "utf8");
+const html = fs.readFileSync(new URL("site/index.html", root), "utf8").replace(/\r\n/g, "\n");
 const envelope = JSON.parse(fs.readFileSync(new URL("site/data.enc.json", root), "utf8"));
 const passcode = (
   process.env.FG_BOT_LOGIN_PASSCODE?.trim()

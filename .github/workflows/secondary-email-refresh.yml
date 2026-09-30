@@ -2,12 +2,9 @@ name: FG Secondary Sales Evening Refresh
 
 on:
   workflow_dispatch:
-  schedule:
-    # Anshul's attachment normally arrives around 17:25 IST. Independent
-    # retries run at 17:35, 18:05 and 18:47 IST.
-    - cron: "5 12 * * *"
-    - cron: "35 12 * * *"
-    - cron: "17 13 * * *"
+  # Scheduled dispatches are intentionally disabled. The daily morning build
+  # now reads the previous evening's attachment directly, which avoids a
+  # second full inventory rebuild and duplicate failure alerts at night.
 
 permissions:
   actions: write

@@ -7,11 +7,10 @@ on:
         description: Optional report date (YYYY-MM-DD)
         required: false
         type: string
-  schedule:
-    # GitHub schedules use UTC: 17:40, 18:00 and 18:30 IST retries.
-    - cron: "10 12 * * *"
-    - cron: "30 12 * * *"
-    - cron: "0 13 * * *"
+  # Scheduled runs are intentionally disabled. This legacy workflow rebuilt
+  # every inventory source at night and repeatedly failed outside the approved
+  # UniCommerce export windows. The morning workflow now imports the previous
+  # evening's Anshul attachment alongside fresh inventory.
 
 concurrency:
   group: fg-inventory-production

@@ -15,7 +15,7 @@ Every answer can be copied, saved as an image, forwarded to WhatsApp, or used as
 
 ## Daily cloud refresh
 
-The morning workflow in `.github/workflows/daily-refresh.yml` runs at 10:45 AM IST, with three 30-minute retries. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files; reads the approved `1. GRN Rolling` Google Sheet directly for future SKU connections; authenticates to Tableau Cloud with a Personal Access Token; reconciles the approved sales extracts; refreshes secondary-sales history; rebuilds the encrypted WhatsApp-style bot; and publishes the verified snapshot. The evening workflow independently checks Anshul Bhatkar's dated `Channel Sales Tracker Dump` attachment at 5:40 PM IST, with 6:00 PM and 6:30 PM retries. Once the repository and secrets are configured, no computer needs to remain switched on.
+The morning workflow in `.github/workflows/daily-refresh.yml` starts at 10:45 AM IST and retries every 30 minutes through 2:15 PM. An independent watchdog checks through 2:28 PM. It downloads the current FG Inventory, Shelfwise Inventory, and Sale Orders files; reads the approved `1. GRN Rolling` Google Sheet; imports Anshul Bhatkar's newest approved `Channel Sales Tracker Dump` from the same morning or previous evening; checks Tableau as a fallback; rebuilds the encrypted WhatsApp-style bot; and publishes the verified snapshot. A retry exits immediately after today's verified inventory is live. Sales-email failure never blocks fresh inventory. Once the repository and secrets are configured, no computer needs to remain switched on.
 
 Required private repository secret: `FG_BOT_PASSCODE`. It protects the encrypted
 configuration and history seed and must not be shared with bot users.
@@ -26,7 +26,7 @@ configuration; the next successful refresh rotates the live bot payload.
 
 Required Tableau repository secrets: `TABLEAU_PAT_NAME` and `TABLEAU_PAT_SECRET`.
 
-Optional Gmail source secrets: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Without them, the workflow uses the validated UniCommerce timestamp scan.
+Required for automatic Anshul-mail sales refresh: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Without them, inventory still refreshes through the validated UniCommerce timestamp scan, but Secondary sales remain on the last reviewed snapshot.
 
 Optional repository variable: `FG_BOT_DATA_URL`, pointing to the deployed `data.enc.json`, preserves rolling history across runs.
 

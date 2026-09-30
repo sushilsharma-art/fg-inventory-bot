@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, time
+from pathlib import Path
 from unittest.mock import patch
 
-from source_fetcher import REPORTS, ReportSpec, _stamps, scan_cloudfront
+from source_fetcher import (
+    REPORTS,
+    ReportSpec,
+    _stamps,
+    fetch_current_sources,
+    scan_cloudfront,
+)
 
 
 class SourceFetcherTests(unittest.TestCase):
@@ -46,6 +53,41 @@ class SourceFetcherTests(unittest.TestCase):
             url,
             "https://example.test/new-folder/"
             "FG%20INVENTORY%20REPORT_07092026100002.csv",
+        )
+
+    @patch("source_fetcher.fetch_channel_sales_attachment")
+    @patch("source_fetcher.download_and_verify")
+    @patch("source_fetcher.scan_cloudfront")
+    @patch("source_fetcher.gmail_export_urls", return_value={})
+    def test_optional_previous_evening_sales_failure_does_not_block_inventory(
+        self,
+        gmail_urls,
+        scan,
+        download,
+        channel_sales,
+    ) -> None:
+        scan.return_value = "https://example.test/source.csv"
+        download.side_effect = [
+            (Path("fg.csv"), {"file": "fg.csv"}),
+            (Path("shelf.csv"), {"file": "shelf.csv"}),
+            (Path("orders.csv"), {"file": "orders.csv"}),
+        ]
+        channel_sales.side_effect = RuntimeError("Gmail OAuth is required")
+
+        paths, evidence = fetch_current_sources(
+            date(2026, 9, 30),
+            Path("work"),
+            include_channel_sales=True,
+            channel_sales_lookback_days=1,
+            require_channel_sales=False,
+        )
+
+        self.assertEqual(set(paths), {"fg", "shelfwise", "sale_orders"})
+        self.assertEqual(evidence["channel_sales_lookup"]["status"], "unavailable")
+        channel_sales.assert_called_once_with(
+            date(2026, 9, 30),
+            Path("work"),
+            lookback_days=1,
         )
 
 

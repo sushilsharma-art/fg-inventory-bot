@@ -3,11 +3,11 @@ name: FG Inventory Daily Schedule Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # GitHub schedules use UTC. This independent watchdog starts at 11:07 AM
-    # IST and checks every 30 minutes through 4:07 PM. It is intentionally
-    # offset from the primary workflow's :15/:45 schedule.
-    - cron: "37 5 * * *"
-    - cron: "7,37 6-10 * * *"
+    # GitHub schedules can be delayed under load, so use many lightweight,
+    # off-peak checks rather than a few fragile slots. GitHub cron is UTC:
+    # 05:03-14:53 UTC equals 10:33 AM-8:23 PM IST every 10 minutes.
+    # The job exits in about one second when today's snapshot is already live.
+    - cron: "3,13,23,33,43,53 5-14 * * *"
 
 concurrency:
   group: fg-inventory-watchdog

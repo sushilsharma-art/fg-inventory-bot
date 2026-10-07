@@ -1,0 +1,15 @@
+name: FG Refresh Backup 12-01 IST
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "31 6 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/refresh-watchdog-core.yml
+

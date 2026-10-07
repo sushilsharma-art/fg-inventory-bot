@@ -3,15 +3,10 @@ name: FG Inventory Daily Schedule Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # GitHub schedules can be delayed under load, so use many lightweight,
-    # off-peak checks rather than a few fragile slots. GitHub cron is UTC:
-    # 05:03-14:53 UTC equals 10:33 AM-8:23 PM IST every 10 minutes.
-    # The job exits in about one second when today's snapshot is already live.
+    # GitHub schedules can be delayed or dropped. Keep broad lightweight
+    # coverage; separate backup workflows provide independent cron queues.
+    # GitHub cron is UTC: 05:03-14:53 equals 10:33 AM-8:23 PM IST.
     - cron: "3,13,23,33,43,53 5-14 * * *"
-
-concurrency:
-  group: fg-inventory-watchdog
-  cancel-in-progress: true
 
 permissions:
   actions: write
@@ -19,52 +14,4 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Dispatch a recovery only when today's snapshot is missing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          report_date="$(TZ=Asia/Kolkata date +%F)"
-          status_url="https://sushilsharma-art.github.io/fg-inventory-bot/status.json?v=$(date +%s)"
-          live_date="$(python - "$status_url" <<'PY'
-          import json
-          import sys
-          import urllib.request
-
-          try:
-              request = urllib.request.Request(
-                  sys.argv[1],
-                  headers={"Cache-Control": "no-cache", "User-Agent": "fg-bot-watchdog"},
-              )
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  print(json.load(response).get("report_date", ""))
-          except Exception:
-              print("")
-          PY
-          )"
-          if [[ "$live_date" == "$report_date" ]]; then
-            echo "Live snapshot is already current for $report_date."
-            exit 0
-          fi
-
-          active_runs="$(gh run list \
-            --repo "$GITHUB_REPOSITORY" \
-            --workflow daily-refresh.yml \
-            --limit 10 \
-            --json status \
-            --jq '[.[] | select(.status != "completed")] | length')"
-          if [[ "$active_runs" != "0" ]]; then
-            echo "A full refresh is already queued or running."
-            exit 0
-          fi
-
-          echo "Live date is ${live_date:-unavailable}; dispatching $report_date recovery."
-          gh workflow run daily-refresh.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            -f run_date="$report_date" \
-            -f force_rebuild=false \
-            -f refresh_tableau_source=false \
-            -f require_channel_sales=false
+    uses: ./.github/workflows/refresh-watchdog-core.yml

@@ -122,6 +122,11 @@ def _is_auto_dark_store(series: pd.Series) -> pd.Series:
     return names.str.startswith("inamo_") | names.str.startswith("er_")
 
 
+def _is_test_inventory_sku(series: pd.Series) -> pd.Series:
+    """Recognize UniCommerce's non-commercial inventory test SKU."""
+    return _clean_text(series).str.casefold().eq("testsku")
+
+
 def _number(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -248,6 +253,16 @@ def build_inventory_frame(
     frame.loc[auto_dark_store, "Location type"] = "Non 3PL"
     frame.loc[auto_dark_store, "check 1"] = "No"
     frame.loc[auto_dark_store, "Inventory Check"] = "Yes"
+
+    # UniCommerce occasionally creates a new test facility before the facility
+    # master is updated. A row carrying the dedicated ``testsku`` is always
+    # non-commercial test inventory, so exclude it without weakening the
+    # publication gate for any unknown facility carrying a real SKU.
+    test_inventory = _is_test_inventory_sku(frame["SkuCode"])
+    frame.loc[test_inventory, "Location Name"] = "Not Consider"
+    frame.loc[test_inventory, "Location type"] = "Non 3PL"
+    frame.loc[test_inventory, "check 1"] = "No"
+    frame.loc[test_inventory, "Inventory Check"] = "No"
 
     unmapped_rows = frame["Location Name"].eq("")
     if unmapped_rows.any():
@@ -460,6 +475,9 @@ def build_freshness(
     eligible["Mapped Location"] = eligible["Facility"].map(master_location).fillna("")
     auto_dark_store = _is_auto_dark_store(eligible["Facility"])
     eligible.loc[auto_dark_store, "Mapped Location"] = "Dark Store"
+    eligible.loc[
+        _is_test_inventory_sku(eligible["Item Type SKU Code"]), "Mapped Location"
+    ] = "Not Consider"
     unmapped = eligible.loc[eligible["Mapped Location"].eq(""), "Facility"]
     if not unmapped.empty:
         counts = unmapped.value_counts()

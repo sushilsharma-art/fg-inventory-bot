@@ -205,6 +205,42 @@ class InventoryPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unmapped facilities"):
             build_inventory_frame(path, self.master, min_rows=1, min_skus=1)
 
+    def test_unmapped_testsku_is_excluded_without_weakening_publication_gate(self) -> None:
+        source = pd.read_csv(self._fg_source())
+        source.loc[0, "Depot Name"] = "HC_SL_BOM"
+        source.loc[0, "SkuCode"] = "testsku"
+        source.loc[0, "Product Name"] = "testsku"
+        path = self.root / "FG INVENTORY REPORT_07082026102315.csv"
+        source.to_csv(path, index=False)
+
+        frame, quality = build_inventory_frame(
+            path,
+            self.master,
+            min_rows=1,
+            min_skus=1,
+        )
+        mapped = frame.loc[frame["Depot Name"].eq("HC_SL_BOM")].iloc[0]
+        self.assertEqual(mapped["Location Name"], "Not Consider")
+        self.assertEqual(mapped["Location type"], "Non 3PL")
+        self.assertEqual(mapped["check 1"], "No")
+        self.assertEqual(mapped["Inventory Check"], "No")
+        self.assertEqual(quality["unmapped_facilities"], 0)
+
+        shelf = pd.read_csv(self._shelf_source())
+        shelf.loc[0, "Facility"] = "HC_SL_BOM"
+        shelf.loc[0, "Item Type SKU Code"] = "testsku"
+        shelf_path = self.root / "Shelfwise Inventory_07082026102243.csv"
+        shelf.to_csv(shelf_path, index=False)
+        freshness, shelf_quality = build_freshness(
+            shelf_path,
+            self.master,
+            date(2026, 8, 7),
+            min_rows=1,
+            min_skus=1,
+        )
+        self.assertIn("Not Consider", freshness["testsku"])
+        self.assertEqual(shelf_quality["unmapped_facilities"], 0)
+
     def test_new_inamo_and_er_facilities_use_dark_store_family_rule(self) -> None:
         source = pd.read_csv(self._fg_source())
         source.loc[0, "Depot Name"] = "Inamo_Future_Launch"

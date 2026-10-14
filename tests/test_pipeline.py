@@ -241,6 +241,39 @@ class InventoryPipelineTests(unittest.TestCase):
         self.assertIn("Not Consider", freshness["testsku"])
         self.assertEqual(shelf_quality["unmapped_facilities"], 0)
 
+    def test_hc_sl_bom_is_excluded_even_when_it_contains_real_skus(self) -> None:
+        source = pd.read_csv(self._fg_source())
+        source.loc[0, "Depot Name"] = "HC_SL_BOM"
+        path = self.root / "FG INVENTORY REPORT_14102026102139.csv"
+        source.to_csv(path, index=False)
+
+        frame, quality = build_inventory_frame(
+            path,
+            self.master,
+            min_rows=1,
+            min_skus=1,
+        )
+        mapped = frame.loc[frame["Depot Name"].eq("HC_SL_BOM")].iloc[0]
+        self.assertEqual(mapped["Location Name"], "Not Consider")
+        self.assertEqual(mapped["Location type"], "Non 3PL")
+        self.assertEqual(mapped["check 1"], "No")
+        self.assertEqual(mapped["Inventory Check"], "No")
+        self.assertEqual(quality["unmapped_facilities"], 0)
+
+        shelf = pd.read_csv(self._shelf_source())
+        shelf.loc[0, "Facility"] = "HC_SL_BOM"
+        shelf_path = self.root / "Shelfwise Inventory_14102026100147.csv"
+        shelf.to_csv(shelf_path, index=False)
+        freshness, shelf_quality = build_freshness(
+            shelf_path,
+            self.master,
+            date(2026, 10, 14),
+            min_rows=1,
+            min_skus=1,
+        )
+        self.assertIn("Not Consider", freshness["SKU1"])
+        self.assertEqual(shelf_quality["unmapped_facilities"], 0)
+
     def test_new_inamo_and_er_facilities_use_dark_store_family_rule(self) -> None:
         source = pd.read_csv(self._fg_source())
         source.loc[0, "Depot Name"] = "Inamo_Future_Launch"

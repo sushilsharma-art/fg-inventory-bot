@@ -127,6 +127,11 @@ def _is_test_inventory_sku(series: pd.Series) -> pd.Series:
     return _clean_text(series).str.casefold().eq("testsku")
 
 
+def _is_excluded_test_facility(series: pd.Series) -> pd.Series:
+    """Recognize facilities that are reserved for non-commercial test stock."""
+    return _clean_text(series).str.casefold().eq("hc_sl_bom")
+
+
 def _number(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -253,6 +258,15 @@ def build_inventory_frame(
     frame.loc[auto_dark_store, "Location type"] = "Non 3PL"
     frame.loc[auto_dark_store, "check 1"] = "No"
     frame.loc[auto_dark_store, "Inventory Check"] = "Yes"
+
+    # HC_SL_BOM is an excluded UniCommerce test facility. Apply the rule in
+    # code as well as the encrypted master so a stale restored configuration
+    # cannot block an otherwise valid same-day publication.
+    excluded_test_facility = _is_excluded_test_facility(frame["Depot Name"])
+    frame.loc[excluded_test_facility, "Location Name"] = "Not Consider"
+    frame.loc[excluded_test_facility, "Location type"] = "Non 3PL"
+    frame.loc[excluded_test_facility, "check 1"] = "No"
+    frame.loc[excluded_test_facility, "Inventory Check"] = "No"
 
     # UniCommerce occasionally creates a new test facility before the facility
     # master is updated. A row carrying the dedicated ``testsku`` is always
@@ -475,6 +489,9 @@ def build_freshness(
     eligible["Mapped Location"] = eligible["Facility"].map(master_location).fillna("")
     auto_dark_store = _is_auto_dark_store(eligible["Facility"])
     eligible.loc[auto_dark_store, "Mapped Location"] = "Dark Store"
+    eligible.loc[
+        _is_excluded_test_facility(eligible["Facility"]), "Mapped Location"
+    ] = "Not Consider"
     eligible.loc[
         _is_test_inventory_sku(eligible["Item Type SKU Code"]), "Mapped Location"
     ] = "Not Consider"

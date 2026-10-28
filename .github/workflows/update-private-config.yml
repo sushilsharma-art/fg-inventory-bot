@@ -1,0 +1,39 @@
+name: One-time encrypted facility mapping update
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-private-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore, validate, and repack encrypted config
+        env:
+          FG_BOT_PASSCODE: ${{ secrets.FG_BOT_PASSCODE }}
+          LOCATION_MASTER_B64: ${{ secrets.FG_BOT_LOCATION_MASTER_B64 }}
+        shell: bash
+        run: |
+          python config_bundle.py restore --bundle config/config_bundle.enc.json --config-dir config
+          printf '%s' "$LOCATION_MASTER_B64" | base64 --decode > "config/Location master.xlsx"
+          python -c 'import pandas as pd; p="config/Location master.xlsx"; d=pd.read_excel(p,dtype=str).fillna(""); names={"BW Rajpura","LJ Rajpura","MM Rajpura"}; x=d[d["Depot Name"].isin(names)]; assert set(x["Depot Name"])==names; assert set(x["New Tagiing for Sale"])=={"Punjab"}; assert set(x["3PL"])=={"3PL"}; assert set(x["For Sale Check1"].str.upper())=={"YES"}; assert set(x["To be considered?"].str.upper())=={"YES"}'
+          python config_bundle.py pack --master "config/Location master.xlsx" --overrides config/facility_overrides.csv --output config/config_bundle.enc.json
+      - name: Commit encrypted bundle only
+        shell: bash
+        run: |
+          git config user.name "fg-inventory-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/config_bundle.enc.json
+          git commit -m "chore: map Rajpura facilities to Punjab"
+          git push

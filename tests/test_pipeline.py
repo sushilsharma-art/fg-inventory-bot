@@ -19,6 +19,7 @@ from inventory_pipeline import (
     build_freshness,
     build_inventory_frame,
     build_payload,
+    load_location_master,
 )
 from secondary_sales import (
     attach_previous_secondary_metrics,
@@ -64,6 +65,14 @@ class InventoryPipelineTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def test_known_sl_mh_bom_mapping_is_always_applied(self) -> None:
+        master = load_location_master(self.master)
+        row = master.loc[master["Depot Name"].eq("SL_MH_BOM")].iloc[0]
+        self.assertEqual(row["Location Name"], "Mumbai")
+        self.assertEqual(row["Location type"], "Non 3PL")
+        self.assertEqual(row["check 1"], "YES")
+        self.assertEqual(row["Inventory Check"], "Yes")
 
     def _fg_source(self) -> Path:
         path = self.root / "FG INVENTORY REPORT_07082026102314.csv"

@@ -108,6 +108,20 @@ BRAND_MAP = {
 }
 
 
+# Small, user-approved operational mappings that must be available before an
+# encrypted location-master bundle can be repacked.  Keep this list narrow:
+# unknown facilities still fail the publication gate and alert the operator.
+KNOWN_FACILITY_OVERRIDES = [
+    {
+        "Depot Name": "SL_MH_BOM",
+        "Location Name": "Mumbai",
+        "Location type": "Non 3PL",
+        "check 1": "YES",
+        "Inventory Check": "Yes",
+    },
+]
+
+
 def _clean_text(series: pd.Series) -> pd.Series:
     return series.fillna("").astype(str).str.strip()
 
@@ -174,6 +188,16 @@ def load_location_master(path: Path) -> pd.DataFrame:
             ],
             ignore_index=True,
         )
+    known_overrides = pd.DataFrame(KNOWN_FACILITY_OVERRIDES)
+    master = pd.concat(
+        [
+            master.loc[
+                ~master["Depot Name"].isin(known_overrides["Depot Name"])
+            ],
+            known_overrides,
+        ],
+        ignore_index=True,
+    )
     required = {
         "Depot Name",
         "Location Name",

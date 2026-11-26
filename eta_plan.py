@@ -29,6 +29,7 @@ ETA_OUTPUT_COLUMNS = [
 ]
 
 _DATE_HEADER = re.compile(r"^\s*(\d{1,2})[- ]([A-Za-z]{3})(?:[- ][A-Za-z]{3})?\s*$")
+_NUMERIC_DATE_HEADER = re.compile(r"^\s*(\d{1,2})[-/](\d{1,2})\s*$")
 _MONTHS = {
     "jan": 1,
     "feb": 2,
@@ -50,11 +51,16 @@ def _sku_key(value: Any) -> str:
 
 
 def _header_date(value: Any, report_date: date) -> date | None:
-    match = _DATE_HEADER.match(str(value or ""))
-    if not match:
-        return None
-    day = int(match.group(1))
-    month = _MONTHS.get(match.group(2).casefold())
+    text = str(value or "")
+    numeric = _NUMERIC_DATE_HEADER.fullmatch(text)
+    if numeric:
+        day, month = map(int, numeric.groups())
+    else:
+        match = _DATE_HEADER.fullmatch(text)
+        if not match:
+            return None
+        day = int(match.group(1))
+        month = _MONTHS.get(match.group(2).casefold())
     if month is None:
         return None
     year = report_date.year
@@ -272,6 +278,58 @@ def attach_eta_metrics(
     report_date: date,
 ) -> pd.DataFrame:
     return _attach_plan(frame, plan, report_date)
+
+
+def audit_eta_payload(
+    frame: pd.DataFrame, plan: pd.DataFrame, sku_records: list[dict[str, Any]]
+) -> dict[str, int]:
+    """Verify published ETA coverage without exposing SKU data in the audit."""
+    published = {
+        _sku_key(row["code"]): row
+        for row in sku_records
+        if row.get("nextEtaDate") and (row.get("nextEtaUnits") or 0) > 0
+    }
+    calculated = frame.assign(_sku=frame["SkuCode"].map(_sku_key))
+    calculated = calculated.drop_duplicates("_sku").set_index("_sku")
+    verified_connections = verified_projections = 0
+    projection_fields = {
+        "postEtaSecOverallDOI": "Post Connection Secondary Overall DOI",
+        "postEtaPrimaryOverallDOI": "Post Connection Primary Overall DOI",
+    }
+    columns = ["SkuCode", "Next Connection Date", "Next Connection Units"]
+    for sku, connection_date, units in plan[columns].itertuples(index=False, name=None):
+        key = _sku_key(sku)
+        row = published.get(key)
+        if not row or row["nextEtaDate"] != connection_date.isoformat():
+            continue
+        if row["nextEtaUnits"] != round(units):
+            continue
+        verified_connections += 1
+        if key not in calculated.index:
+            continue
+        expected = calculated.loc[key]
+        if all(
+            field in row
+            and row[field] == (None if pd.isna(expected[column]) else round(expected[column]))
+            for field, column in projection_fields.items()
+        ):
+            verified_projections += 1
+    return {
+        "published_connection_skus": len(published),
+        "verified_date_and_units_skus": verified_connections,
+        "verified_projection_skus": verified_projections,
+        "published_primary_doi_skus": sum(
+            row.get("postEtaPrimaryOverallDOI") is not None for row in published.values()
+        ),
+        "published_secondary_doi_skus": sum(
+            row.get("postEtaSecOverallDOI") is not None for row in published.values()
+        ),
+        "published_both_doi_skus": sum(
+            row.get("postEtaPrimaryOverallDOI") is not None
+            and row.get("postEtaSecOverallDOI") is not None
+            for row in published.values()
+        ),
+    }
 
 
 def attach_previous_eta_metrics(

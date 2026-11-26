@@ -19,6 +19,7 @@ from config_bundle import restore_config
 from eta_plan import (
     attach_eta_metrics,
     attach_previous_eta_metrics,
+    audit_eta_payload,
     download_eta_plan,
 )
 from inventory_pipeline import (
@@ -570,6 +571,8 @@ def main() -> int:
         raise ValueError("Payload date reconciliation failed.")
     if not payload["freshnessAvailable"]:
         raise ValueError("Freshness data is unavailable; publication blocked.")
+    if eta_quality["status"] == "fresh":
+        eta_quality.update(audit_eta_payload(frame, eta_plan, payload["skus"]))
     envelope = encrypt_payload(payload, login_passcode)
     _atomic_json(deployed_path, envelope)
     blob = deployed_path.read_bytes()

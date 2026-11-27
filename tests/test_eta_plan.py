@@ -4,13 +4,18 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pandas as pd
+import requests
 
 from eta_plan import (
+    ETA_SOURCE_URL,
     attach_eta_metrics,
-    attach_previous_eta_metrics,
     audit_eta_payload,
+    download_eta_plan,
+    eta_snapshot_matches,
+    load_eta_snapshot,
     parse_eta_plan,
 )
 
@@ -124,7 +129,29 @@ class EtaPlanTests(unittest.TestCase):
         records[0]["nextEtaUnits"] = 5
         self.assertEqual(audit_eta_payload(calculated, plan, records)["verified_date_and_units_skus"], 0)
 
-    def test_previous_eta_is_discarded_after_its_connection_date(self) -> None:
+    def test_download_uses_only_the_approved_tab_and_fingerprints_changes(self) -> None:
+        report_date = date(2026, 11, 27)
+        headers = ["Brand", "SKU Code", "Name", *([""] * 8), "28-11"]
+        rows = [["MM", f"SKU{i}", "Test", *([""] * 8), 25] for i in range(105)]
+        received = Mock(content=pd.DataFrame([headers, *rows]).to_csv(index=False, header=False).encode())
+        with patch.dict("os.environ", {"FG_BOT_ETA_CSV_URL": "https://example.invalid/other.csv"}):
+            with patch("eta_plan.requests.get", return_value=received) as fetch:
+                _, plan, first = download_eta_plan(self.root, report_date)
+                fetch.assert_called_once_with(ETA_SOURCE_URL, timeout=(15, 90))
+                self.assertEqual(len(plan), 105)
+                rows[0][-1] = 30
+                received.content = pd.DataFrame([headers, *rows]).to_csv(index=False, header=False).encode()
+                _, _, edited = download_eta_plan(self.root, report_date)
+        previous = {
+            "status": "fresh",
+            "sourceUrl": first["source_url"],
+            "planFingerprint": first["plan_fingerprint"],
+        }
+        self.assertTrue(eta_snapshot_matches(previous, first))
+        self.assertFalse(eta_snapshot_matches(previous, edited))
+        self.assertFalse(eta_snapshot_matches({**previous, "sourceUrl": "old.csv"}, first))
+
+    def test_failed_approved_tab_clears_connection_fields(self) -> None:
         frame = pd.DataFrame(
             [["SKU1", "Yes", "Mumbai", 100, 0, 10, 5]],
             columns=[
@@ -137,13 +164,17 @@ class EtaPlanTests(unittest.TestCase):
                 "Secondary DRR",
             ],
         )
-        output, count = attach_previous_eta_metrics(
-            frame,
-            [{"code": "SKU1", "nextEtaDate": "2026-09-08", "nextEtaUnits": 50}],
-            date(2026, 9, 8),
-        )
-        self.assertEqual(count, 0)
+        frame["Next Connection Date"] = date(2026, 11, 29)
+        frame["Next Connection Units"] = 50
+        report_date = date(2026, 11, 27)
+        with patch("eta_plan.requests.get", side_effect=requests.Timeout("test timeout")):
+            path, plan, quality = load_eta_snapshot(self.root, report_date)
+        self.assertIsNone(path)
+        self.assertEqual(quality["status"], "unavailable")
+        self.assertFalse(eta_snapshot_matches({"status": "fresh", "sourceUrl": ETA_SOURCE_URL}, quality))
+        output = attach_eta_metrics(frame, plan, report_date)
         self.assertTrue(pd.isna(output.iloc[0]["Next Connection Date"]))
+        self.assertTrue(pd.isna(output.iloc[0]["Next Connection Units"]))
 
 
 if __name__ == "__main__":

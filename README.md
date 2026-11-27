@@ -30,7 +30,7 @@ Required for automatic Anshul-mail sales refresh: `GMAIL_CLIENT_ID`, `GMAIL_CLIE
 
 Optional repository variable: `FG_BOT_DATA_URL`, pointing to the deployed `data.enc.json`, preserves rolling history across runs.
 
-Optional repository variable: `FG_BOT_ETA_CSV_URL`. Leave it blank to use the approved `1. GRN Rolling` Google Sheet CSV export. The workflow stores only derived per-SKU ETA fields inside the encrypted payload; it never commits the raw planning sheet.
+Future connections use only the `1. GRN Rolling` Google Sheet tab (`gid=376294268`). The workflow checks that tab before reusing an existing same-day payload. If the tab can't be read, the bot marks future connections unavailable rather than showing older values. Only derived SKU ETA fields are published, inside the encrypted payload; the raw sheet is never committed.
 
 Optional Tableau variables are `TABLEAU_SERVER_URL`, `TABLEAU_SITE_CONTENT_URL`, `TABLEAU_WORKBOOK_CONTENT_URL`, `TABLEAU_QUANTITY_VIEW`, and `TABLEAU_VALUE_VIEW`; the Man Matters production defaults are used when they are blank.
 

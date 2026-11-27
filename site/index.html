@@ -389,7 +389,8 @@ function rSku(s){
     +(CS?'<tr><td>Secondary · Mumbai</td><td class="num">'+fmtIN(s.secMumbaiDRR||0)+'</td>'+doiCell(s.secMumbaiDOI||0)+'</tr>':'')
     +'<tr><td>WEB</td><td class="num">'+fmtIN(s.pl3DRR)+'</td>'+doiCell(s.pl3DOI)+'</tr></table>'
     +(CS?'<small>Secondary Mumbai excludes WebApp.</small>':'');
-  if(s.nextEtaDate && s.nextEtaUnits){
+  var etaIsFresh=D.etaPlan && D.etaPlan.status==='fresh';
+  if(etaIsFresh && s.nextEtaDate && s.nextEtaUnits){
     var postSecondary=s.postEtaSecOverallDOI==null?'N/A':fmtIN(s.postEtaSecOverallDOI)+' days';
     var postPrimary=s.postEtaPrimaryOverallDOI==null?'N/A':fmtIN(s.postEtaPrimaryOverallDOI)+' days';
     var etaDays=Number(s.nextEtaDays||0);
@@ -398,8 +399,10 @@ function rSku(s){
       +'<div class="eta-doi"><div><small>After connection</small><strong>Secondary Overall · '+postSecondary+'</strong></div>'
       +'<div><small>After connection</small><strong>Primary Overall · '+postPrimary+'</strong></div></div>'
       +'<div class="eta-note">DRR for '+fmtIN(etaDays)+' day'+(etaDays===1?' is':'s are')+' deducted before adding incoming stock.'+doiNote+'</div></div>';
-  } else if(D.etaPlan){
+  } else if(etaIsFresh){
     h+='<div class="eta-empty">📦 No upcoming connection is currently planned for this SKU.</div>';
+  } else if(D.etaPlan){
+    h+='<div class="eta-empty">📦 Future connections are unavailable. The GRN Rolling tab could not be refreshed.</div>';
   }
   if(CS){
     h+='<div class="compact-line"><b>Secondary:</b> 7d '+fmtIN(s.sec7||0)+' units / '+fmtIN(s.secDrr7||0)+' DRR · 30d '+fmtIN(s.sec30||0)+' units / '+fmtIN(s.secDrr30||0)+' DRR<br>MTD <b>'+fmtIN(s.secMTDUnits||0)+' units · '+money(s.secMTDValue||0)+'</b></div>'

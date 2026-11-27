@@ -18,9 +18,9 @@ from crypto_payload import decrypt_payload, encrypt_payload
 from config_bundle import restore_config
 from eta_plan import (
     attach_eta_metrics,
-    attach_previous_eta_metrics,
     audit_eta_payload,
-    download_eta_plan,
+    eta_snapshot_matches,
+    load_eta_snapshot,
 )
 from inventory_pipeline import (
     build_freshness,
@@ -322,17 +322,15 @@ def main() -> int:
         previous_secondary,
         run_date,
     )
-    previous_has_eta = bool(
-        previous
-        and int(previous.get("schemaVersion", 0)) >= 5
-        and isinstance(previous.get("etaPlan"), dict)
-    )
+    eta_path, eta_plan, eta_quality = load_eta_snapshot(dated_work / "eta_plan", run_date)
+    previous_eta = previous.get("etaPlan") if previous else None
     if (
         previous
         and previous.get("dateKey") == run_date.isoformat()
         and not args.force
         and not args.require_tableau
-        and previous_has_eta
+        and isinstance(previous_eta, dict)
+        and eta_snapshot_matches(previous_eta, eta_quality)
         and (
             not (args.require_channel_sales or args.refresh_channel_sales)
             or previous_has_current_sales
@@ -348,7 +346,11 @@ def main() -> int:
         _atomic_json(args.site_dir / "status.json", status)
         _atomic_json(
             dated_work / "quality_report.json",
-            {**status, "details": {"source": "existing deployed payload"}},
+            {**status, "details": {
+                "source": "existing deployed payload",
+                "eta_status": eta_quality["status"],
+                "eta_upcoming_skus": eta_quality["upcoming_skus"],
+            }},
         )
         print(f"Current-date payload already exists for {run_date}; no rebuild needed.")
         return 0
@@ -475,13 +477,8 @@ def main() -> int:
             ),
         }
 
-    eta_quality = None
-    try:
-        eta_path, eta_plan, eta_quality = download_eta_plan(
-            dated_work / "eta_plan",
-            run_date,
-        )
-        frame = attach_eta_metrics(frame, eta_plan, run_date)
+    frame = attach_eta_metrics(frame, eta_plan, run_date)
+    if eta_path is not None:
         matched_eta_skus = int(
             frame.loc[frame["Next Connection Date"].notna(), "SkuCode"].nunique()
         )
@@ -503,32 +500,10 @@ def main() -> int:
             "Loaded GRN Rolling ETA plan: "
             f"{eta_quality['upcoming_skus']:,} SKUs with a future connection."
         )
-    except Exception as exc:
-        if previous and previous.get("skus"):
-            frame, carried_rows = attach_previous_eta_metrics(
-                frame,
-                previous["skus"],
-                run_date,
-            )
-        else:
-            carried_rows = 0
-            frame, _ = attach_previous_eta_metrics(frame, [], run_date)
-        eta_quality = {
-            "status": "carried_forward" if carried_rows else "unavailable",
-            "sheet": "1. GRN Rolling",
-            "source_file": (
-                previous.get("etaPlan", {}).get("sourceFile", "") if previous else ""
-            ),
-            "upcoming_skus": carried_rows,
-            "warning": str(exc),
-        }
+    else:
         print(
-            "WARNING: GRN Rolling refresh failed; "
-            + (
-                f"preserved {carried_rows:,} still-future ETA rows."
-                if carried_rows
-                else "no valid previous ETA rows were available."
-            )
+            "WARNING: GRN Rolling refresh failed; no earlier ETA values will be used. "
+            + eta_quality["warning"]
         )
     workbook_path = dated_work / f"FG_Inventory_Daily_{run_date:%d%m%Y}.xlsx"
     write_summary_workbook(frame, workbook_path, secondary)

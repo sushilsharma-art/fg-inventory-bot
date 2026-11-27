@@ -823,6 +823,8 @@ def build_payload(
             "sheet": eta_quality.get("sheet", "1. GRN Rolling"),
             "status": eta_quality.get("status", "unknown"),
             "sourceFile": eta_quality.get("source_file", ""),
+            "sourceUrl": eta_quality.get("source_url"),
+            "planFingerprint": eta_quality.get("plan_fingerprint"),
             "fetchedAt": eta_quality.get("fetched_at"),
             "futureStart": eta_quality.get("future_date_start"),
             "futureEnd": eta_quality.get("future_date_end"),

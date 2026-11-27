@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import os
+import hashlib
+import json
 import re
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ ETA_SOURCE_URL = (
     "https://docs.google.com/spreadsheets/d/"
     f"{ETA_SPREADSHEET_ID}/export?format=csv&gid={ETA_SHEET_GID}"
 )
+ETA_PLAN_COLUMNS = ["SkuCode", "Next Connection Date", "Next Connection Units"]
 ETA_OUTPUT_COLUMNS = [
     "Next Connection Date",
     "Days Until Connection",
@@ -160,9 +162,7 @@ def parse_eta_plan(
         plan = daily_plan.loc[daily_plan["Next Connection Date"].eq(first_dates)].copy()
         plan = plan.sort_values(["Next Connection Date", "SkuCode"]).reset_index(drop=True)
     else:
-        plan = pd.DataFrame(
-            columns=["SkuCode", "Next Connection Date", "Next Connection Units"]
-        )
+        plan = pd.DataFrame(columns=ETA_PLAN_COLUMNS)
 
     quality = {
         "status": "fresh",
@@ -182,19 +182,12 @@ def parse_eta_plan(
 def download_eta_plan(
     output_dir: Path,
     report_date: date,
-    *,
-    source_url: str | None = None,
 ) -> tuple[Path, pd.DataFrame, dict[str, Any]]:
-    """Download and validate the approved public CSV export."""
-    url = (
-        source_url
-        or os.getenv("FG_BOT_ETA_CSV_URL", "").strip()
-        or ETA_SOURCE_URL
-    )
+    """Download future connections only from the approved GRN Rolling tab."""
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / f"GRN_Rolling_{report_date:%Y-%m-%d}.csv"
     partial = target.with_suffix(".csv.part")
-    response = requests.get(url, timeout=(15, 90))
+    response = requests.get(ETA_SOURCE_URL, timeout=(15, 90))
     response.raise_for_status()
     if len(response.content) < 1_000:
         raise ValueError(
@@ -204,9 +197,45 @@ def download_eta_plan(
     partial.replace(target)
     plan, quality = parse_eta_plan(target, report_date)
     quality["source_file"] = target.name
-    quality["source_url"] = url
+    quality["source_url"] = ETA_SOURCE_URL
     quality["fetched_at"] = datetime.now(timezone.utc).isoformat()
+    connections = [
+        (sku, connection_date.isoformat(), float(units))
+        for sku, connection_date, units in plan[ETA_PLAN_COLUMNS].itertuples(index=False, name=None)
+    ]
+    quality["plan_fingerprint"] = hashlib.sha256(
+        json.dumps(sorted(connections), separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     return target, plan, quality
+
+
+def load_eta_snapshot(
+    output_dir: Path, report_date: date
+) -> tuple[Path | None, pd.DataFrame, dict[str, Any]]:
+    try:
+        return download_eta_plan(output_dir, report_date)
+    except (OSError, ValueError, requests.RequestException) as exc:
+        return None, pd.DataFrame(columns=ETA_PLAN_COLUMNS), {
+            "status": "unavailable",
+            "sheet": ETA_SHEET_NAME,
+            "source_url": ETA_SOURCE_URL,
+            "upcoming_skus": 0,
+            "warning": str(exc),
+        }
+
+
+def eta_snapshot_matches(previous: dict, current: dict) -> bool:
+    """Only retain a same-day payload when its approved source did not change."""
+    if previous.get("sourceUrl") != ETA_SOURCE_URL:
+        return False
+    if current["status"] == "unavailable":
+        return previous.get("status") == "unavailable"
+    fingerprint = current.get("plan_fingerprint")
+    return bool(
+        previous.get("status") == "fresh"
+        and fingerprint
+        and previous.get("planFingerprint") == fingerprint
+    )
 
 
 def _attach_plan(
@@ -296,8 +325,7 @@ def audit_eta_payload(
         "postEtaSecOverallDOI": "Post Connection Secondary Overall DOI",
         "postEtaPrimaryOverallDOI": "Post Connection Primary Overall DOI",
     }
-    columns = ["SkuCode", "Next Connection Date", "Next Connection Units"]
-    for sku, connection_date, units in plan[columns].itertuples(index=False, name=None):
+    for sku, connection_date, units in plan[ETA_PLAN_COLUMNS].itertuples(index=False, name=None):
         key = _sku_key(sku)
         row = published.get(key)
         if not row or row["nextEtaDate"] != connection_date.isoformat():
@@ -330,31 +358,3 @@ def audit_eta_payload(
             for row in published.values()
         ),
     }
-
-
-def attach_previous_eta_metrics(
-    frame: pd.DataFrame,
-    previous_skus: list[dict[str, Any]],
-    report_date: date,
-) -> tuple[pd.DataFrame, int]:
-    """Keep still-future ETA quantities while recalculating DOI on today's stock."""
-    rows = []
-    for item in previous_skus:
-        try:
-            connection_date = date.fromisoformat(str(item.get("nextEtaDate", "")))
-            units = float(item.get("nextEtaUnits") or 0)
-        except (TypeError, ValueError):
-            continue
-        if connection_date > report_date and units > 0:
-            rows.append(
-                {
-                    "SkuCode": _sku_key(item.get("code")),
-                    "Next Connection Date": connection_date,
-                    "Next Connection Units": units,
-                }
-            )
-    plan = pd.DataFrame(
-        rows,
-        columns=["SkuCode", "Next Connection Date", "Next Connection Units"],
-    )
-    return _attach_plan(frame, plan, report_date), len(plan)
